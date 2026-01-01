@@ -202,10 +202,11 @@ def extract_game_data(
 
   return (list(zip(sequences, sequences_labels)), list(zip(positions, positions_labels)))
 
-engine = chess.engine.SimpleEngine.popen_uci("./stylometry/WinRateStylo/engines/stockfish-17-1")
-engine.configure({"UCI_ShowWDL": True})
-
 DO_ENGINE_EVAL = False
+
+if DO_ENGINE_EVAL:
+  engine = chess.engine.SimpleEngine.popen_uci("./stylometry/WinRateStylo/engines/stockfish-17-1")
+  engine.configure({"UCI_ShowWDL": True})
 
 def engine_eval(board):
   if not DO_ENGINE_EVAL:
