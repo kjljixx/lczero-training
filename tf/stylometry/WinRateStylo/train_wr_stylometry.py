@@ -261,7 +261,7 @@ def train_model(
     train_dataset,
     validation_data=val_dataset,
     epochs=epochs,
-    steps_per_epoch=2500,
+    steps_per_epoch=5000,
     callbacks=callbacks,
     verbose=1 # type: ignore
   )
@@ -288,7 +288,7 @@ if __name__ == "__main__":
   parser.add_argument("data_dir", help="Directory containing seq_shards and pos_shards")
   parser.add_argument("--output-dir", type=str, default="stylometry/WinRateStylo/models")
   parser.add_argument("--epochs", type=int, default=500)
-  parser.add_argument("--batch-size", type=int, default=128)
+  parser.add_argument("--batch-size", type=int, default=64)
   parser.add_argument("--learning-rate", type=float, default=1e-4)
   parser.add_argument("--val-split", type=float, default=0.05)
   parser.add_argument("--hidden-dim", type=int, default=128)
@@ -317,7 +317,7 @@ if __name__ == "__main__":
     learning_rate=args.learning_rate,
     val_split=args.val_split,
     num_layers=6,
-    num_heads=4,
+    num_heads=12,
     mlp_dim=128,
     hidden_dim=args.hidden_dim,
     wr_ffn_layers=args.wr_ffn_layers,
