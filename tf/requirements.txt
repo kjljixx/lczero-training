@@ -1,4 +1,6 @@
-numpy==1.13.3
-tensorflow==2.5.1
-tensorflow-tensorboard==0.4.0rc2
-protobuf==3.12.1
+numpy==1.26.4
+tensorflow==2.19.1
+tf_keras==2.19.0
+tensorboard==2.19.0
+protobuf==5.29.5
+chess

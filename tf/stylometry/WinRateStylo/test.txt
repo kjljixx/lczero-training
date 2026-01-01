@@ -1,0 +1,24 @@
+Data distr by pct: white win, draw, black win (6660 games)
+['48.94', '5.23', '45.83']
+Data distr by elo pct: higher elo win, draw, lower elo win (6660 games)
+['60.98', '5.23', '33.79']
+baseline accuracies:
+SF depth 2: 46.71% (6660 games)
+SF depth 2 (force a win/loss prediction): 60.82% (6660 games)
+SF depth 4: 47.93 (6660 games)
+SF depth 4 (force win/loss): 61.18 (6660 games)
+SF depth 5: 48.09 (6660)
+SF depth 5 (force w/l): 61.31 (6660)
+SF depth 6: 48.18
+SF depth 6 force wl: 61.38
+SF depth 7: 48.24
+SF depth 7 force wl: 61.45
+SF depth 8: 48.24
+SF depth 8 force wl: 61.51
+SF depth 9: 48.73
+SF depth 9 force wl: 61.54
+SF depth 10: 48.56
+SF depth 10 force wl: 61.57
+
+our:
+run2025-12-22-no-stylo: 61.47%

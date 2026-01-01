@@ -1,0 +1,1 @@
+python3 train.py --cfg configs/example.yaml --output /tmp/mymodel.txt

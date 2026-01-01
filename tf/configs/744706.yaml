@@ -1,6 +1,6 @@
 %YAML 1.2
 ---
-name: '128x10-744706-lr0.0001-5009games-feature-extractor'                       # ideally no spaces
+name: '744706'                       # ideally no spaces
 gpu: 0                                 # gpu id to process on
 
 dataset: 
@@ -34,10 +34,9 @@ training:
     path: '/networks'    # network storage dir
 
 model:
-  # filters: 128
-  filters: 2
-  residual_blocks: 4
-  se_ratio: 1                          # Squeeze Excite structural network architecture.
+  filters: 128
+  residual_blocks: 10
+  se_ratio: 4                          # Squeeze Excite structural network architecture.
   policy: 'convolution'                  # attention policy fields:
   pol_embedding_size: 64               # embedding vector size
   pol_encoder_layers: 1                # number of intermediate attention layers in the policy head

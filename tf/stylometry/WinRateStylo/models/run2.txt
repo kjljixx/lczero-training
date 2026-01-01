@@ -1,0 +1,62 @@
+Epoch 1: saving model to stylometry/WinRateStylo/models/checkpoint_epoch_01.keras
+451/451 [==============================] - 820s 1s/step - loss: 0.8768 - accuracy: 0.5713 - top3_accuracy: 1.0000 - val_loss: 0.7627 - val_accuracy: 0.6469 - val_top3_accuracy: 1.0000
+Epoch 2/500
+451/451 [==============================] - ETA: 0s - loss: 0.6723 - accuracy: 0.7036 - top3_accuracy: 1.0000  
+Epoch 2: saving model to stylometry/WinRateStylo/models/checkpoint_epoch_02.keras
+451/451 [==============================] - 553s 1s/step - loss: 0.6723 - accuracy: 0.7036 - top3_accuracy: 1.0000 - val_loss: 0.6282 - val_accuracy: 0.7192 - val_top3_accuracy: 1.0000
+Epoch 3/500
+451/451 [==============================] - ETA: 0s - loss: 0.5055 - accuracy: 0.7921 - top3_accuracy: 1.0000   
+Epoch 3: saving model to stylometry/WinRateStylo/models/checkpoint_epoch_03.keras
+451/451 [==============================] - 670s 1s/step - loss: 0.5055 - accuracy: 0.7921 - top3_accuracy: 1.0000 - val_loss: 0.5097 - val_accuracy: 0.7755 - val_top3_accuracy: 1.0000
+Epoch 4/500
+451/451 [==============================] - ETA: 0s - loss: 0.3739 - accuracy: 0.8501 - top3_accuracy: 1.0000  
+Epoch 4: saving model to stylometry/WinRateStylo/models/checkpoint_epoch_04.keras
+451/451 [==============================] - 394s 873ms/step - loss: 0.3739 - accuracy: 0.8501 - top3_accuracy: 1.0000 - val_loss: 0.4258 - val_accuracy: 0.8150 - val_top3_accuracy: 1.0000
+Epoch 5/500
+451/451 [==============================] - ETA: 0s - loss: 0.2842 - accuracy: 0.8872 - top3_accuracy: 1.0000  
+Epoch 5: saving model to stylometry/WinRateStylo/models/checkpoint_epoch_05.keras
+451/451 [==============================] - 420s 932ms/step - loss: 0.2842 - accuracy: 0.8872 - top3_accuracy: 1.0000 - val_loss: 0.4029 - val_accuracy: 0.8287 - val_top3_accuracy: 1.0000
+Epoch 6/500
+451/451 [==============================] - ETA: 0s - loss: 0.2353 - accuracy: 0.9042 - top3_accuracy: 1.0000  
+Epoch 6: saving model to stylometry/WinRateStylo/models/checkpoint_epoch_06.keras
+451/451 [==============================] - 430s 954ms/step - loss: 0.2353 - accuracy: 0.9042 - top3_accuracy: 1.0000 - val_loss: 0.3529 - val_accuracy: 0.8478 - val_top3_accuracy: 1.0000
+Epoch 7/500
+451/451 [==============================] - ETA: 0s - loss: 0.2080 - accuracy: 0.9161 - top3_accuracy: 1.0000  
+Epoch 7: saving model to stylometry/WinRateStylo/models/checkpoint_epoch_07.keras
+451/451 [==============================] - 546s 1s/step - loss: 0.2080 - accuracy: 0.9161 - top3_accuracy: 1.0000 - val_loss: 0.3396 - val_accuracy: 0.8625 - val_top3_accuracy: 1.0000
+Epoch 8/500
+451/451 [==============================] - ETA: 0s - loss: 0.1838 - accuracy: 0.9247 - top3_accuracy: 1.0000  
+Epoch 8: saving model to stylometry/WinRateStylo/models/checkpoint_epoch_08.keras
+451/451 [==============================] - 368s 816ms/step - loss: 0.1838 - accuracy: 0.9247 - top3_accuracy: 1.0000 - val_loss: 0.2941 - val_accuracy: 0.8781 - val_top3_accuracy: 1.0000
+Epoch 9/500
+451/451 [==============================] - ETA: 0s - loss: 0.1729 - accuracy: 0.9294 - top3_accuracy: 1.0000   
+Epoch 9: saving model to stylometry/WinRateStylo/models/checkpoint_epoch_09.keras
+451/451 [==============================] - 441s 976ms/step - loss: 0.1729 - accuracy: 0.9294 - top3_accuracy: 1.0000 - val_loss: 0.3325 - val_accuracy: 0.8637 - val_top3_accuracy: 1.0000
+Epoch 10/500
+451/451 [==============================] - ETA: 0s - loss: 0.1602 - accuracy: 0.9346 - top3_accuracy: 1.0000  
+Epoch 10: saving model to stylometry/WinRateStylo/models/checkpoint_epoch_10.keras
+451/451 [==============================] - 539s 1s/step - loss: 0.1602 - accuracy: 0.9346 - top3_accuracy: 1.0000 - val_loss: 0.3142 - val_accuracy: 0.8742 - val_top3_accuracy: 1.0000
+Epoch 11/500
+451/451 [==============================] - ETA: 0s - loss: 0.1524 - accuracy: 0.9375 - top3_accuracy: 1.0000  
+Epoch 11: saving model to stylometry/WinRateStylo/models/checkpoint_epoch_11.keras
+451/451 [==============================] - 416s 923ms/step - loss: 0.1524 - accuracy: 0.9375 - top3_accuracy: 1.0000 - val_loss: 0.2932 - val_accuracy: 0.8787 - val_top3_accuracy: 1.0000
+Epoch 12/500
+451/451 [==============================] - ETA: 0s - loss: 0.1476 - accuracy: 0.9394 - top3_accuracy: 1.0000  
+Epoch 12: saving model to stylometry/WinRateStylo/models/checkpoint_epoch_12.keras
+451/451 [==============================] - 375s 830ms/step - loss: 0.1476 - accuracy: 0.9394 - top3_accuracy: 1.0000 - val_loss: 0.3009 - val_accuracy: 0.8787 - val_top3_accuracy: 1.0000
+Epoch 13/500
+451/451 [==============================] - ETA: 0s - loss: 0.1423 - accuracy: 0.9422 - top3_accuracy: 1.0000   
+Epoch 13: saving model to stylometry/WinRateStylo/models/checkpoint_epoch_13.keras
+451/451 [==============================] - 542s 1s/step - loss: 0.1423 - accuracy: 0.9422 - top3_accuracy: 1.0000 - val_loss: 0.3193 - val_accuracy: 0.8768 - val_top3_accuracy: 1.0000
+Epoch 14/500
+451/451 [==============================] - ETA: 0s - loss: 0.1379 - accuracy: 0.9432 - top3_accuracy: 1.0000   
+Epoch 14: saving model to stylometry/WinRateStylo/models/checkpoint_epoch_14.keras
+451/451 [==============================] - 546s 1s/step - loss: 0.1379 - accuracy: 0.9432 - top3_accuracy: 1.0000 - val_loss: 0.3156 - val_accuracy: 0.8742 - val_top3_accuracy: 1.0000
+Epoch 15/500
+451/451 [==============================] - ETA: 0s - loss: 0.1308 - accuracy: 0.9470 - top3_accuracy: 1.0000  
+Epoch 15: saving model to stylometry/WinRateStylo/models/checkpoint_epoch_15.keras
+451/451 [==============================] - 352s 781ms/step - loss: 0.1308 - accuracy: 0.9470 - top3_accuracy: 1.0000 - val_loss: 0.3399 - val_accuracy: 0.8781 - val_top3_accuracy: 1.0000
+Epoch 16/500
+451/451 [==============================] - ETA: 0s - loss: 0.1322 - accuracy: 0.9471 - top3_accuracy: 1.0000   
+Epoch 16: saving model to stylometry/WinRateStylo/models/checkpoint_epoch_16.keras
+451/451 [==============================] - 619s 1s/step - loss: 0.1322 - accuracy: 0.9471 - top3_accuracy: 1.0000 - val_loss: 0.3316 - val_accuracy: 0.8739 - val_top3_accuracy: 1.0000

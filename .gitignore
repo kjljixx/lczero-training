@@ -106,3 +106,18 @@ venv.bak/
 
 # protobuf stuff
 tf/proto/
+/tf/leelalogs
+/training-run1-test80-20250816-1417
+/training-run1-test80-20240902-0617
+/data
+*.tar
+
+tf/models/
+tf/nets/
+tf/stylometry/WinRateStylo/data
+tf/stylometry/WinRateStylo/engines
+
+*.keras
+*.npy
+*.tfevents.*
+tf/stylometry/WinRateStylo/training_dataset_dbg.txt

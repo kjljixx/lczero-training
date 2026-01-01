@@ -248,10 +248,12 @@ if __name__ == "__main__":
     'Tensorflow pipeline for training Leela Chess.')
     argparser.add_argument('--cfg',
                            type=argparse.FileType('r'),
-                           help='yaml configuration with training parameters')
+                           help='yaml configuration with training parameters',
+                           default='configs/example.yaml')
     argparser.add_argument('--output',
                            type=str,
-                           help='file to store weights in')
+                           help='file to store weights in',
+                           default="/networks/latest_weights.txt")
 
     #mp.set_start_method('spawn')
     main(argparser.parse_args())

@@ -35,8 +35,8 @@ training:
 
 model:
   # filters: 128
-  filters: 2
-  residual_blocks: 4
+  filters: 128
+  residual_blocks: 10
   se_ratio: 1                          # Squeeze Excite structural network architecture.
   policy: 'convolution'                  # attention policy fields:
   pol_embedding_size: 64               # embedding vector size
