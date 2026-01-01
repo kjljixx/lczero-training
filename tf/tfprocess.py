@@ -31,10 +31,10 @@ import operator
 
 from net import Net
 
+os.environ["TF_USE_LEGACY_KERAS"] = "1"
 
 def square_relu(x):
     return tf.nn.relu(x)**2
-
 
 class Gating(tf_keras.layers.Layer):
 

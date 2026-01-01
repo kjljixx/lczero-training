@@ -45,7 +45,6 @@ def parse_position_example(serialized_example):
     stm_seq, stm_mask = tf.zeros((MAX_MOVES, SEQ_PLANES, 8, 8), dtype=tf.int8), tf.zeros((MAX_MOVES,), dtype=tf.int8)
   else:
     stm_seq, stm_mask = pad_sequence(tf.reshape(stm_seq, [-1, SEQ_PLANES, 8, 8]).numpy().tolist())
-  print(tf.math.count_nonzero(stm_mask))
   opp_seq = tf.io.decode_raw(example['opp_player_seq'], tf.int8)
   if tf.size(opp_seq) == 0:
     opp_seq, opp_mask = tf.zeros((MAX_MOVES, SEQ_PLANES, 8, 8), dtype=tf.int8), tf.zeros((MAX_MOVES,), dtype=tf.int8)
