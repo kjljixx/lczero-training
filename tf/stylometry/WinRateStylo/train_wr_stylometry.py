@@ -317,7 +317,7 @@ if __name__ == "__main__":
     learning_rate=args.learning_rate,
     val_split=args.val_split,
     num_layers=6,
-    num_heads=8,
+    num_heads=4,
     mlp_dim=128,
     hidden_dim=args.hidden_dim,
     wr_ffn_layers=args.wr_ffn_layers,
