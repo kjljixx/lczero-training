@@ -2,7 +2,6 @@
 __pycache__/
 *.py[cod]
 *$py.class
-*_pb2.py
 
 # C extensions
 *.so
@@ -105,7 +104,6 @@ venv.bak/
 .mypy_cache/
 
 # protobuf stuff
-tf/proto/
 /tf/leelalogs
 /training-run1-test80-20250816-1417
 /training-run1-test80-20240902-0617
