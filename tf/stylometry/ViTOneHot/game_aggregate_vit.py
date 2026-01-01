@@ -6,7 +6,7 @@ import tensorflow_models as tfm # type: ignore
 
 from tfprocess import TFProcess
 
-CONFIG_FILE_PATH = 'configs/example.yaml'
+CONFIG_FILE_PATH = 'configs/744706.yaml'
 
 def get_sinusoidal_positional_encoding(max_positions=500, d_model=768):
     position = np.arange(max_positions)[:, np.newaxis]
