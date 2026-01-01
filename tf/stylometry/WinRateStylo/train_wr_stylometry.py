@@ -103,14 +103,10 @@ def create_position_dataset(
   )
 
   dataset = tf.data.Dataset.from_generator(generator, output_signature=output_signature)
-  options = tf.data.Options()
-  options.threading.max_intra_op_parallelism = 1
-  options.threading.private_threadpool_size = 1
-  dataset = dataset.with_options(options)
   if shuffle:
     dataset = dataset.shuffle(buffer_size=1000)
   dataset = dataset.batch(batch_size)
-  dataset = dataset.prefetch(2)
+  dataset = dataset.prefetch(10)
   return dataset
 
 def get_shard_paths(data_dir: str, shard_type: str) -> List[str]:
