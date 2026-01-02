@@ -42,7 +42,8 @@ class GameAggregateViT(tf.keras.Model):
             cfg = yaml.safe_load(file)
         
         tfp = TFProcess(cfg)
-        tfp.l2reg = tf.keras.regularizers.l2(l2=0.5 * 0.0001)
+        tfp.init_net(use_heads=False)
+        tfp.restore()
         
         # ONLY extract body, not heads
         input_var = tf.keras.Input(shape=(21, 8, 8))
@@ -54,11 +55,9 @@ class GameAggregateViT(tf.keras.Model):
             assert flow.shape[2] == self.hidden_dim, f"Expected encoder output dim {self.hidden_dim}, got {flow.shape[2]}"
             self.move_projection = tf.keras.Model(inputs=input_var, outputs=flow)
         else:
-            flow = tfp.create_residual_body(input_var)
-            print(flow.shape)
             filters = cfg['model']['filters']
             # assert self.hidden_dim == filters * 8 * 8, f"Expected hidden dim {filters * 8 * 8}, got {self.hidden_dim}"
-            self.move_projection = tf.keras.Model(inputs=input_var, outputs=flow)
+            self.move_projection = tfp.model
             if filters * 8 * 8 != self.hidden_dim:
               print("Stylo ViT Using compression layer")
               self.move_projection = tf.keras.Sequential([
