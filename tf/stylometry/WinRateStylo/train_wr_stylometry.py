@@ -84,10 +84,10 @@ def create_position_dataset(
                 },
                 wdl.numpy()
               )
-            except tf.errors.DataLossError as e:
+            except Exception as e:
               print(f"Skipping corrupted record in {shard_path}: {e}")
               continue
-        except tf.errors.DataLossError as e:
+        except Exception as e:
           print(f"Skipping corrupted shard {shard_path}: {e}")
           continue
       if not repeat:
