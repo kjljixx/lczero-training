@@ -27,6 +27,8 @@ def pad_sequence(
   mask = np.zeros((max_moves,), dtype=np.int8)
 
   num_moves_in_seq = min(len(sequence), max_moves)
+  if num_moves_in_seq == 0:
+    return padded, mask
   padded[:num_moves_in_seq] = sequence[:num_moves_in_seq]
   mask[:num_moves_in_seq] = 1.0
 

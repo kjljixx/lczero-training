@@ -31,7 +31,7 @@ training:
     policy_loss_weight: 1.0            # weight of policy loss
     value_loss_weight: 1.0             # weight of value loss
     moves_left_loss_weight: 1.0        # weight of moves-left loss
-    path: '/networks'    # network storage dir
+    path: '/home/wcai/lczero-training/tf/nets'    # network storage dir
 
 model:
   filters: 128
