@@ -90,8 +90,8 @@ class GameAggregateViT(tf.keras.Model):
       move_features = inputs  # (batch, num_moves, 21, 8, 8)
       batch_size = tf.shape(move_features)[0]
       num_moves = tf.shape(move_features)[1]
+      d_type = move_features.dtype
       
-      d_type = moves_reshaped.dtype
       moves_reshaped = tf.reshape(move_features, [-1, 21, 8, 8])  # (batch*num_moves, 21, 8, 8)
       moves_reshaped = tf.concat([moves_reshaped[:, :13], tf.zeros((batch_size*num_moves, 91, 8, 8), dtype=d_type), moves_reshaped[:, -8:]], axis=1) # (batch*num_moves, 112, 8, 8)
       move_embeddings = self.move_projection(moves_reshaped, training=training)  # (batch*num_moves, filters, 8, 8)
