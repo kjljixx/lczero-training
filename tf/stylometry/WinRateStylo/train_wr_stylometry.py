@@ -176,6 +176,7 @@ class ScaffoldedViTAndWinRate(tf.keras.Model):
 def train_model(
   data_dir: str,
   output_dir: str,
+  start_checkpoint: str,
   epochs: int,
   batch_size: int,
   learning_rate: float,
@@ -228,6 +229,9 @@ def train_model(
     metrics=['accuracy', tf.keras.metrics.TopKCategoricalAccuracy(k=3, name='top3_accuracy')]
   )
 
+  if start_checkpoint != "":
+    model.load_weights(start_checkpoint)
+
   model.build(input_shape={
     'input1': (None, MAX_MOVES, SEQ_PLANES, 8, 8),
     'input2': (None, MAX_MOVES, SEQ_PLANES, 8, 8),
@@ -249,12 +253,8 @@ def train_model(
       log_dir=os.path.join(output_dir, 'logs'),
       histogram_freq=0
     ),
-    tf.keras.callbacks.EarlyStopping(
-      monitor='val_loss',
-      patience=3,
-      min_delta=0,
-      mode='auto',
-      restore_best_weights=True
+    tf.keras.callbacks.ReduceLROnPlateau(
+      patience=3
     )
   ]
 
@@ -289,6 +289,7 @@ if __name__ == "__main__":
   parser = argparse.ArgumentParser(description="Train chess stylometry model")
   parser.add_argument("data_dir", help="Directory containing seq_shards and pos_shards")
   parser.add_argument("--output-dir", type=str, default="stylometry/WinRateStylo/models")
+  parser.add_argument("--start-checkpoint", type=str, default="")
   parser.add_argument("--epochs", type=int, default=500)
   parser.add_argument("--batch-size", type=int, default=32)
   parser.add_argument("--learning-rate", type=float, default=1e-4)
@@ -314,6 +315,7 @@ if __name__ == "__main__":
   train_model(
     data_dir=args.data_dir,
     output_dir=args.output_dir,
+    start_checkpoint=args.start_checkpoint,
     epochs=args.epochs,
     batch_size=args.batch_size,
     learning_rate=args.learning_rate,
