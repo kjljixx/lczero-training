@@ -232,7 +232,7 @@ def train_model(
   if start_checkpoint != "":
     model = tf.keras.models.load_model(start_checkpoint)
 
-  model.build(input_shape={
+  model.build(input_shape={ # type: ignore
     'input1': (None, MAX_MOVES, SEQ_PLANES, 8, 8),
     'input2': (None, MAX_MOVES, SEQ_PLANES, 8, 8),
     'pos': (None, POS_PLANES * 8 * 8),
@@ -240,8 +240,9 @@ def train_model(
     'mask2': (None, MAX_MOVES)
   })
 
-  print(stylo_model.summary())
-  print(wr_model.summary())
+  if start_checkpoint == "":
+    print(stylo_model.summary())
+    print(wr_model.summary())
 
   callbacks = [
     tf.keras.callbacks.ModelCheckpoint(
