@@ -230,7 +230,7 @@ def train_model(
   )
 
   if start_checkpoint != "":
-    model.load_weights(start_checkpoint)
+    tf.keras.models.load_model(start_checkpoint)
 
   model.build(input_shape={
     'input1': (None, MAX_MOVES, SEQ_PLANES, 8, 8),
