@@ -14,6 +14,61 @@ MAX_MOVES = 100
 SEQ_PLANES = 21
 POS_PLANES = 112
 
+def chessboard_struct_to_lc0_planes(structs, short=False):
+  num_positions = 1 if short else 8
+  planes = np.zeros((13*num_positions, 8, 8), dtype=np.int8)
+
+  pcs_1_idx = 0
+  pcs_2_idx = 0
+  for pos_idx in range(num_positions):
+    occ = structs[pos_idx * 3]
+    pcs_1 = structs[pos_idx * 3 + 1]
+    pcs_2 = structs[pos_idx * 3 + 2]
+    
+    for sq in range(64):
+      chess_rank = sq // 8
+      chess_file = sq % 8
+      
+      if occ & (1 << sq):
+        if pcs_1_idx < 16:
+          val = (pcs_1 >> (4 * pcs_1_idx)) & 0xF
+          pcs_1_idx += 1
+        else:
+          val = (pcs_2 >> (4 * pcs_2_idx)) & 0xF
+          pcs_2_idx += 1
+        
+        piece_type = (val & 0x7) + 1
+        piece_color = 0 if (val & 0x8) == 0 else 1
+
+        plane_idx = piece_type - 1 + (0 if piece_color == 0 else 6)
+        planes[13*pos_idx + plane_idx, chess_rank, chess_file] = 1.0
+    rep_count = (structs[num_positions * 3] >> (2 * pos_idx)) & 0x3
+    if rep_count >= 1:
+      planes[13*pos_idx + 12, :, :] = 1.0
+    
+  us_qs = (structs[num_positions * 3] >> 24) & 0x2
+  us_ks = (structs[num_positions * 3] >> 24) & 0x4
+  them_qs = (structs[num_positions * 3] >> 24) & 0x8
+  them_ks = (structs[num_positions * 3] >> 24) & 0x10
+  stm = (structs[num_positions * 3] >> 24) & 0x1
+  halfmove_clock = (structs[num_positions * 3] >> 16) & 0xFF
+
+  if us_qs:
+    planes[13*num_positions + 0, :, :] = 1.0
+  if us_ks:
+    planes[13*num_positions + 1, :, :] = 1.0
+  if them_qs:
+    planes[13*num_positions + 2, :, :] = 1.0
+  if them_ks:
+    planes[13*num_positions + 3, :, :] = 1.0
+  planes[13*num_positions + 4, :, :] = 1.0 if stm == 1 else 0.0
+  planes[13*num_positions + 5, :, :] = halfmove_clock
+
+  planes[13*num_positions + 6, :, :] = 0.0
+  planes[13*num_positions + 7, :, :] = 1.0
+
+  return planes
+
 def pad_sequence(
   sequence: List[np.ndarray],
   max_moves: int = 100,
@@ -46,13 +101,15 @@ def parse_position_example(serialized_example):
   if tf.size(stm_seq) == 0:
     stm_seq, stm_mask = tf.zeros((MAX_MOVES, SEQ_PLANES, 8, 8), dtype=tf.int8), tf.zeros((MAX_MOVES,), dtype=tf.int8)
   else:
+    stm_seq = map(lambda x: chessboard_struct_to_lc0_planes(x, short=True), stm_seq)
     stm_seq, stm_mask = pad_sequence(tf.reshape(stm_seq, [-1, SEQ_PLANES, 8, 8]).numpy().tolist())
   opp_seq = tf.io.decode_raw(example['opp_player_seq'], tf.int8)
   if tf.size(opp_seq) == 0:
     opp_seq, opp_mask = tf.zeros((MAX_MOVES, SEQ_PLANES, 8, 8), dtype=tf.int8), tf.zeros((MAX_MOVES,), dtype=tf.int8)
   else:
+    opp_seq = map(lambda x: chessboard_struct_to_lc0_planes(x, short=True), opp_seq)
     opp_seq, opp_mask = pad_sequence(tf.reshape(opp_seq, [-1, SEQ_PLANES, 8, 8]).numpy().tolist())
-  planes = tf.io.decode_raw(example['full_board_planes'], tf.int8)
+  planes = tf.io.decode_raw(chessboard_struct_to_lc0_planes(example['full_board_planes']), tf.int8)
   planes = tf.reshape(planes, [POS_PLANES * 8 * 8])
   wdl = example['wdl']
   return stm_seq, stm_mask, opp_seq, opp_mask, planes, wdl

@@ -74,69 +74,80 @@ def get_pgns(
 
   return pgn_files
 
-def board_history_to_lc0_planes(board_history: List[chess.Board], repetition_counts: List[int]) -> np.ndarray:
-  planes = np.zeros((112, 8, 8), dtype=np.int8)
+def board_to_chessboard_struct(board_history, repetition_counts, short=False):
+  structs = []
 
   history_len = len(board_history)
-  if history_len > 8:
-    board_history = board_history[:8]
-    repetition_counts = repetition_counts[:8]
-    history_len = 8
+  max_len = 1 if short else 8
+  if history_len > max_len:
+    board_history = board_history[:max_len]
+    repetition_counts = repetition_counts[:max_len]
+    history_len = max_len
 
-  # (8 positions × 13 planes each)
-  for hist_idx in range(8):
-    plane_offset = hist_idx * 13
+  for hist_idx in range(history_len):
+    board = board_history[hist_idx]
+    stm = board.turn
+    occ = 0
+    pcs_1 = 0
+    pcs_2 = 0
+    
+    sq_map = lambda s: s if stm == chess.WHITE else s ^ 56
+    
+    occupied = board.occupied
+    if stm == chess.BLACK:
+      occupied = chess.flip_vertical(occupied)
+    
+    occ = occupied
+    
+    pcs_1_idx = 0
+    pcs_2_idx = 0
+    for sq in range(64):
+      if not (occ & (1 << sq)):
+        continue
+      
+      orig_sq = sq_map(sq)
+      piece = board.piece_at(orig_sq)
+      
+      pc_type = piece.piece_type - 1
+      pc_color = 0 if piece.color == stm else 8
+      val = pc_color | pc_type
+      
+      if pcs_1_idx < 16:
+        pcs_1 |= (val << (4 * (pcs_1_idx)))
+        pcs_1_idx += 1
+      else:
+        pcs_2 |= (val << (4 * (pcs_2_idx)))
+        pcs_2_idx += 1
+    structs.extend([occ, pcs_1, pcs_2])
+  for _ in range(max_len - history_len):
+    structs.extend([0, 0, 0])
 
-    if hist_idx < history_len:
-      board = board_history[hist_idx]
-      rep_count = repetition_counts[hist_idx] if hist_idx < len(repetition_counts) else 0
+  #metadata: (5 bits for castling + STM color + 3 bit padding) + (8 bit hm clock) + (8 positions * 2 bits each for repetition count = 16 bits)
+  board = board_history[0]
+  stm = board.turn
+  mtd = 0
+  castle_and_stm = 0
+  if board.has_queenside_castling_rights(stm):
+    castle_and_stm |= 2
+  if board.has_kingside_castling_rights(stm):
+    castle_and_stm |= 4
+  if board.has_queenside_castling_rights(not stm):
+    castle_and_stm |= 8
+  if board.has_kingside_castling_rights(not stm):
+    castle_and_stm |= 16
+  
+  if stm == chess.BLACK:
+    castle_and_stm |= 1
 
-      us_color = board_history[0].turn  # stm
-      them_color = not us_color
+  mtd |= castle_and_stm << 24
 
-      for piece_type in range(1, 7):  # PAWN=1 to KING=6
-        piece_plane = plane_offset + piece_type - 1
-        piece_bb = board.pieces(piece_type, us_color)
-        for square in piece_bb:
-          chess_rank = chess.square_rank(square)
-          if us_color == chess.BLACK:
-            chess_rank = 7 - chess_rank
-          chess_file = chess.square_file(square)
-          planes[piece_plane, chess_rank, chess_file] = 1.0
+  mtd |= (board.halfmove_clock & 0xFF) << 16
 
-      for piece_type in range(1, 7):
-        piece_plane = plane_offset + 6 + piece_type - 1
-        piece_bb = board.pieces(piece_type, them_color)
-        for square in piece_bb:
-          chess_rank = chess.square_rank(square)
-          if them_color == chess.BLACK:
-            chess_rank = 7 - chess_rank
-          chess_file = chess.square_file(square)
-          planes[piece_plane, chess_rank, chess_file] = 1.0
+  for idx, rep_count in enumerate(repetition_counts):
+    mtd |= min(rep_count, 3) << (2 * idx)
+  structs.append(mtd)
 
-      if rep_count >= 1:
-        planes[plane_offset + 12, :, :] = 1.0
-
-  current_board = board_history[0] if history_len > 0 else chess.Board()
-  us_color = current_board.turn
-  them_color = not us_color
-
-  if current_board.has_queenside_castling_rights(us_color): # our queenside castling
-    planes[104, :, :] = 1.0  
-  if current_board.has_kingside_castling_rights(us_color): # our kingside castling
-    planes[105, :, :] = 1.0
-  if current_board.has_queenside_castling_rights(them_color): # their queenside castling
-    planes[106, :, :] = 1.0
-  if current_board.has_kingside_castling_rights(them_color): # their kingside castling
-    planes[107, :, :] = 1.0 
-
-  planes[108, :, :] = 1.0 if current_board.turn == chess.BLACK else 0.0 # stm
-  planes[109, :, :] = current_board.halfmove_clock
-
-  planes[110, :, :] = 0.0
-  planes[111, :, :] = 1.0
-
-  return planes
+  return np.array(structs, dtype=np.uint64)
 
 def extract_game_data(
   game: chess.pgn.Game,
@@ -177,19 +188,19 @@ def extract_game_data(
       position_hashes = position_hashes[:8]
       repetition_counts = repetition_counts[:8]
 
-    board_planes = board_history_to_lc0_planes(board_history, repetition_counts)
+    board_planes = board_to_chessboard_struct(board_history, repetition_counts)
 
     if move_num != 0:
       if board.turn == chess.WHITE:
         #append to BLACK
-        sequences[1].append(np.concatenate((board_planes[:13], board_planes[-8:])))
+        sequences[1].append(np.concatenate((board_planes[:3], board_planes[-1:])))
         positions.append((white_idx, black_idx, board_planes))
         positions_labels.append(
           [1, 0, 0] if result == "1-0" else [0, 0, 1] if result == "0-1" else [0, 1, 0]
         )
       else:
         #append to WHITE
-        sequences[0].append(np.concatenate((board_planes[:13], board_planes[-8:])))
+        sequences[0].append(np.concatenate((board_planes[:3], board_planes[-1:])))
         positions.append((black_idx, white_idx, board_planes))
         positions_labels.append(
           [1, 0, 0] if result == "0-1" else [0, 0, 1] if result == "1-0" else [0, 1, 0]
@@ -374,9 +385,9 @@ def save_shard(shard_path, items, serialize_function):
 
 def serialize_position(paired_position):
   feature = {
-    'stm_player_seq': tf.train.Feature(bytes_list=tf.train.BytesList(value=[np.array(paired_position[0], dtype=np.int8).tobytes()])),
-    'opp_player_seq': tf.train.Feature(bytes_list=tf.train.BytesList(value=[np.array(paired_position[1], dtype=np.int8).tobytes()])),
-    'full_board_planes': tf.train.Feature(bytes_list=tf.train.BytesList(value=[np.array(paired_position[2][0][2], dtype=np.int8).tobytes()])),
+    'stm_player_seq': tf.train.Feature(bytes_list=tf.train.BytesList(value=[np.array(paired_position[0], dtype=np.uint64).tobytes()])),
+    'opp_player_seq': tf.train.Feature(bytes_list=tf.train.BytesList(value=[np.array(paired_position[1], dtype=np.uint64).tobytes()])),
+    'full_board_planes': tf.train.Feature(bytes_list=tf.train.Int64List(value=paired_position[2][0][2])),
     'wdl': tf.train.Feature(float_list=tf.train.FloatList(value=paired_position[2][1]))
   }
 
