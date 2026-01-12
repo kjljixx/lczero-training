@@ -104,8 +104,13 @@ def parse_position_example(serialized_example):
     stm_seq = map(lambda x: chessboard_struct_to_lc0_planes(x, short=True), stm_seq)
     stm_seq, stm_mask = pad_sequence(tf.reshape(stm_seq, [-1, SEQ_PLANES, 8, 8]).numpy().tolist())
   opp_seq = tf.io.decode_raw(example['opp_player_seq'], tf.int8)
+  opp_seq_planes = []
+  for i in range(tf.size(opp_seq)):
+    planes = map(lambda x: chessboard_struct_to_lc0_planes(x, short=True), opp_seq[i])
+    seq, mask = pad_sequence(tf.reshape(planes, [-1, SEQ_PLANES, 8, 8]).numpy().tolist())
+    opp_seq_planes.append(seq)
   if tf.size(opp_seq) == 0:
-    opp_seq, opp_mask = tf.zeros((MAX_MOVES, SEQ_PLANES, 8, 8), dtype=tf.int8), tf.zeros((MAX_MOVES,), dtype=tf.int8)
+    opp_seq_planes, opp_mask = [tf.zeros((MAX_MOVES, SEQ_PLANES, 8, 8), dtype=tf.int8), tf.zeros((MAX_MOVES,), dtype=tf.int8)]
   else:
     opp_seq = map(lambda x: chessboard_struct_to_lc0_planes(x, short=True), opp_seq)
     opp_seq, opp_mask = pad_sequence(tf.reshape(opp_seq, [-1, SEQ_PLANES, 8, 8]).numpy().tolist())

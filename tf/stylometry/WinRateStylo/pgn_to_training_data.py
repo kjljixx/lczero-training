@@ -300,12 +300,16 @@ def process_pgns(
         curr_positions = random.sample(curr_positions, k=int(len(curr_positions)*(1.0 - pos_skip_rate)) if pos_skip_rate < 1.0 else 0)
         def to_paired(pos):
           nonlocal has_seq_pos_count, total_seq_pos_count
+          num_in_0 = 0
+          num_in_1 = 0
           if pos[0][0] in curr_sequences:
-            has_seq_pos_count += 1
+            num_in_0 = min(5, len(curr_sequences[pos[0][0]]))
+            has_seq_pos_count += num_in_0
           if pos[0][1] in curr_sequences:
-            has_seq_pos_count += 1
-          total_seq_pos_count += 2
-          return (random.choice(curr_sequences[pos[0][0]])[0] if pos[0][0] in curr_sequences else [], random.choice(curr_sequences[pos[0][1]])[0] if pos[0][1] in curr_sequences else [], pos)
+            num_in_1 = min(5, len(curr_sequences[pos[0][1]]))
+            has_seq_pos_count += num_in_1
+          total_seq_pos_count += 10
+          return (map(lambda x: x[0], random.sample(curr_sequences[pos[0][0]], num_in_0)) if pos[0][0] in curr_sequences else [], map(lambda x: x[0], random.sample(curr_sequences[pos[0][1]], num_in_1)) if pos[0][1] in curr_sequences else [], pos)
         curr_paired_positions = map(to_paired, curr_positions)
         save_shard(f"{output_prefix}/pos_shards/{curr_pos_shard_idx:04d}.tfrecord", curr_paired_positions, serialize_position)
         curr_pos_shard_idx += 1
