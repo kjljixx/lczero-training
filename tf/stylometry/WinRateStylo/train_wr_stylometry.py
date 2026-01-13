@@ -235,18 +235,15 @@ class ScaffoldedViTAndWinRate(tf.keras.Model):
       pos = None
     
     def process_player_seq(seq, mask):
-      batch_size = tf.shape(seq)[0]
-      num_games = tf.shape(seq)[1]
-      num_moves = tf.shape(seq)[2]
+      seq_unstacked = tf.unstack(seq, axis=1)
+      mask_unstacked = tf.unstack(mask, axis=1)
       
-      seq_flat = tf.reshape(seq, [-1, num_moves, 21, 8, 8])
-      mask_flat = tf.reshape(mask, [-1, num_moves])
-      
-      game_embeddings = self.vit(seq_flat, training=training, mask=mask_flat)
-
-      print(game_embeddings.shape)
-      
-      game_embeddings = tf.reshape(game_embeddings, [batch_size, num_games, -1])
+      all_game_embeddings = []
+      for g_seq, g_mask in zip(seq_unstacked, mask_unstacked):
+        game_emb = self.vit(g_seq, training=training, mask=g_mask)
+        all_game_embeddings.append(game_emb)
+        
+      game_embeddings = tf.stack(all_game_embeddings, axis=1)
       
       game_mask = tf.reduce_any(mask > 0, axis=-1) # (batch, num_games)
       game_mask_float = tf.expand_dims(tf.cast(game_mask, tf.float32), axis=-1)
@@ -259,8 +256,6 @@ class ScaffoldedViTAndWinRate(tf.keras.Model):
 
     features1 = process_player_seq(seq1, mask1)
     features2 = process_player_seq(seq2, mask2)
-
-    print(features1.shape, features2.shape)
 
     combined = tf.concat([features1, features2, tf.cast(pos, tf.float32)], axis=-1)
     
