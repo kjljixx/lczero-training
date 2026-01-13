@@ -258,6 +258,8 @@ class ScaffoldedViTAndWinRate(tf.keras.Model):
     features1 = process_player_seq(seq1, mask1)
     features2 = process_player_seq(seq2, mask2)
 
+    print(features1.shape, features2.shape)
+
     combined = tf.concat([features1, features2, tf.cast(pos, tf.float32)], axis=-1)
     
     win_rate = self.wr_pred(combined, training=training)
