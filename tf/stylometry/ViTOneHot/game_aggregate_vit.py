@@ -57,16 +57,14 @@ class GameAggregateViT(tf.keras.Model):
         else:
             filters = cfg['model']['filters']
             # assert self.hidden_dim == filters * 8 * 8, f"Expected hidden dim {filters * 8 * 8}, got {self.hidden_dim}"
-            move_body = tfp.model
+            self.move_projection = tfp.model
             if filters * 8 * 8 != self.hidden_dim:
               print("Stylo ViT Using compression layer")
-              proj_input = tf.keras.Input(shape=(112, 8, 8))
-              x = move_body(proj_input)
-              x = layers.Flatten()(x)
-              x = layers.Dense(units=self.hidden_dim, activation='relu')(x)
-              self.move_projection = tf.keras.Model(inputs=proj_input, outputs=x)
-            else:
-              self.move_projection = move_body
+              self.move_projection = tf.keras.Sequential([
+                  self.move_projection,
+                  layers.Flatten(),
+                  layers.Dense(units=self.hidden_dim, activation='relu')
+              ])
         
         #sin position encoding like paper recommended
         self.positional_encoding = get_sinusoidal_positional_encoding(
