@@ -309,7 +309,7 @@ def process_pgns(
             num_in_1 = min(5, len(curr_sequences[pos[0][1]]))
             has_seq_pos_count += num_in_1
           total_seq_pos_count += 10
-          return (map(lambda x: x[0], random.sample(curr_sequences[pos[0][0]], num_in_0)) if pos[0][0] in curr_sequences else [], map(lambda x: x[0], random.sample(curr_sequences[pos[0][1]], num_in_1)) if pos[0][1] in curr_sequences else [], pos)
+          return (list(map(lambda x: x[0], random.sample(curr_sequences[pos[0][0]], num_in_0))) if pos[0][0] in curr_sequences else [], list(map(lambda x: x[0], random.sample(curr_sequences[pos[0][1]], num_in_1))) if pos[0][1] in curr_sequences else [], pos)
         curr_paired_positions = map(to_paired, curr_positions)
         save_shard(f"{output_prefix}/pos_shards/{curr_pos_shard_idx:04d}.tfrecord", curr_paired_positions, serialize_position)
         curr_pos_shard_idx += 1
@@ -388,10 +388,23 @@ def save_shard(shard_path, items, serialize_function):
   logger.info(f"Saved shard to {shard_path}")
 
 def serialize_position(paired_position):
+  def pad_and_flatten(games, max_games=5, max_moves=100):
+    all_game_moves = np.zeros((max_games, max_moves, 4), dtype=np.uint64)
+    for i, game in enumerate(games[:max_games]):
+      if not game:
+        continue
+      num_moves = min(len(game), max_moves)
+      if num_moves > 0:
+        all_game_moves[i, :num_moves, :] = np.array(game[:num_moves], dtype=np.uint64)
+    return all_game_moves
+
+  stm_padded = pad_and_flatten(paired_position[0])
+  opp_padded = pad_and_flatten(paired_position[1])
+
   feature = {
-    'stm_player_seq': tf.train.Feature(bytes_list=tf.train.BytesList(value=[np.array(paired_position[0], dtype=np.uint64).tobytes()])),
-    'opp_player_seq': tf.train.Feature(bytes_list=tf.train.BytesList(value=[np.array(paired_position[1], dtype=np.uint64).tobytes()])),
-    'full_board_planes': tf.train.Feature(bytes_list=tf.train.Int64List(value=paired_position[2][0][2])),
+    'stm_player_seq': tf.train.Feature(bytes_list=tf.train.BytesList(value=[stm_padded.tobytes()])),
+    'opp_player_seq': tf.train.Feature(bytes_list=tf.train.BytesList(value=[opp_padded.tobytes()])),
+    'full_board_planes': tf.train.Feature(bytes_list=tf.train.BytesList(value=[paired_position[2][0][2].tobytes()])),
     'wdl': tf.train.Feature(float_list=tf.train.FloatList(value=paired_position[2][1]))
   }
 
