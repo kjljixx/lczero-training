@@ -243,6 +243,8 @@ class ScaffoldedViTAndWinRate(tf.keras.Model):
       mask_flat = tf.reshape(mask, [-1, num_moves])
       
       game_embeddings = self.vit(seq_flat, training=training, mask=mask_flat)
+
+      print(game_embeddings.shape)
       
       game_embeddings = tf.reshape(game_embeddings, [batch_size, num_games, -1])
       
