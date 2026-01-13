@@ -97,27 +97,17 @@ def parse_position_example(serialized_example):
     'wdl': tf.io.FixedLenFeature([3], tf.float32),
   }
   example = tf.io.parse_single_example(serialized_example, feature_description)
-  stm_seq = tf.io.decode_raw(example['stm_player_seq'], tf.int8)
-  if tf.size(stm_seq) == 0:
-    stm_seq, stm_mask = tf.zeros((MAX_MOVES, SEQ_PLANES, 8, 8), dtype=tf.int8), tf.zeros((MAX_MOVES,), dtype=tf.int8)
-  else:
-    stm_seq = map(lambda x: chessboard_struct_to_lc0_planes(x, short=True), stm_seq)
-    stm_seq, stm_mask = pad_sequence(tf.reshape(stm_seq, [-1, SEQ_PLANES, 8, 8]).numpy().tolist())
-  opp_seq = tf.io.decode_raw(example['opp_player_seq'], tf.int8)
-  opp_seq_planes = []
-  for i in range(tf.size(opp_seq)):
-    planes = map(lambda x: chessboard_struct_to_lc0_planes(x, short=True), opp_seq[i])
-    seq, mask = pad_sequence(tf.reshape(planes, [-1, SEQ_PLANES, 8, 8]).numpy().tolist())
-    opp_seq_planes.append(seq)
-  if tf.size(opp_seq) == 0:
-    opp_seq_planes, opp_mask = [tf.zeros((MAX_MOVES, SEQ_PLANES, 8, 8), dtype=tf.int8), tf.zeros((MAX_MOVES,), dtype=tf.int8)]
-  else:
-    opp_seq = map(lambda x: chessboard_struct_to_lc0_planes(x, short=True), opp_seq)
-    opp_seq, opp_mask = pad_sequence(tf.reshape(opp_seq, [-1, SEQ_PLANES, 8, 8]).numpy().tolist())
-  planes = tf.io.decode_raw(chessboard_struct_to_lc0_planes(example['full_board_planes']), tf.int8)
-  planes = tf.reshape(planes, [POS_PLANES * 8 * 8])
-  wdl = example['wdl']
-  return stm_seq, stm_mask, opp_seq, opp_mask, planes, wdl
+  
+  stm_seq = tf.io.decode_raw(example['stm_player_seq'], tf.uint64)
+  opp_seq = tf.io.decode_raw(example['opp_player_seq'], tf.uint64)
+  full_board = tf.io.decode_raw(example['full_board_planes'], tf.uint64)
+  
+  # Shapes: (5, 100, 4), (5, 100, 4), (25,)
+  stm_seq = tf.reshape(stm_seq, [5, 100, 4])
+  opp_seq = tf.reshape(opp_seq, [5, 100, 4])
+  full_board = tf.reshape(full_board, [25])
+  
+  return stm_seq, opp_seq, full_board, example['wdl']
 
 def create_position_dataset(
   pos_shard_paths: List[str],
@@ -133,14 +123,36 @@ def create_position_dataset(
           dataset = tf.data.TFRecordDataset(shard_path)
           for raw_record in dataset:
             try:
-              stm_seq, stm_mask, opp_seq, opp_mask, planes, wdl = parse_position_example(raw_record)
               if random.random() < skip_rate:
                 continue
+              
+              stm_seq_uint64, opp_seq_uint64, full_board_uint64, wdl = parse_position_example(raw_record)
+              
+              stm_seq_np = stm_seq_uint64.numpy()
+              opp_seq_np = opp_seq_uint64.numpy()
+              full_board_np = full_board_uint64.numpy()
+              
+              pos_planes = chessboard_struct_to_lc0_planes(full_board_np, short=False)
+              
+              def process_seq(seq_np):
+                planes_all_games = np.zeros((5, 100, 21, 8, 8), dtype=np.int8)
+                mask_all_games = np.zeros((5, 100), dtype=np.int8)
+                for g_idx in range(5):
+                  for m_idx in range(100):
+                    struct = seq_np[g_idx, m_idx]
+                    if np.any(struct > 0):
+                      planes_all_games[g_idx, m_idx] = chessboard_struct_to_lc0_planes(struct, short=True)
+                      mask_all_games[g_idx, m_idx] = 1
+                return planes_all_games, mask_all_games
+
+              stm_planes, stm_mask = process_seq(stm_seq_np)
+              opp_planes, opp_mask = process_seq(opp_seq_np)
+              
               yield (
                 {
-                  'input1': stm_seq,
-                  'input2': opp_seq,
-                  'pos': planes.numpy(),
+                  'input1': stm_planes,
+                  'input2': opp_planes,
+                  'pos': pos_planes.flatten(),
                   'mask1': stm_mask,
                   'mask2': opp_mask
                 },
@@ -157,11 +169,11 @@ def create_position_dataset(
 
   output_signature = (
     {
-      'input1': tf.TensorSpec(shape=(MAX_MOVES, SEQ_PLANES, 8, 8), dtype=tf.int8), # type: ignore
-      'input2': tf.TensorSpec(shape=(MAX_MOVES, SEQ_PLANES, 8, 8), dtype=tf.int8), # type: ignore
+      'input1': tf.TensorSpec(shape=(5, MAX_MOVES, SEQ_PLANES, 8, 8), dtype=tf.int8), # type: ignore
+      'input2': tf.TensorSpec(shape=(5, MAX_MOVES, SEQ_PLANES, 8, 8), dtype=tf.int8), # type: ignore
       'pos': tf.TensorSpec(shape=(POS_PLANES * 8 * 8,), dtype=tf.int8), # type: ignore
-      'mask1': tf.TensorSpec(shape=(MAX_MOVES,), dtype=tf.int8), # type: ignore
-      'mask2': tf.TensorSpec(shape=(MAX_MOVES,), dtype=tf.int8) # type: ignore
+      'mask1': tf.TensorSpec(shape=(5, MAX_MOVES,), dtype=tf.int8), # type: ignore
+      'mask2': tf.TensorSpec(shape=(5, MAX_MOVES,), dtype=tf.int8) # type: ignore
     },
     tf.TensorSpec(shape=(3,), dtype=tf.float32) # type: ignore
   )
@@ -222,13 +234,30 @@ class ScaffoldedViTAndWinRate(tf.keras.Model):
       mask1 = mask2 = None
       pos = None
     
-    features1 = self.vit(seq1, training=training, mask=mask1)
-    features2 = self.vit(seq2, training=training, mask=mask2)
+    def process_player_seq(seq, mask):
+      batch_size = tf.shape(seq)[0]
+      num_games = tf.shape(seq)[1]
+      num_moves = tf.shape(seq)[2]
+      
+      seq_flat = tf.reshape(seq, [-1, num_moves, 21, 8, 8])
+      mask_flat = tf.reshape(mask, [-1, num_moves])
+      
+      game_embeddings = self.vit(seq_flat, training=training, mask=mask_flat)
+      
+      game_embeddings = tf.reshape(game_embeddings, [batch_size, num_games, -1])
+      
+      game_mask = tf.reduce_any(mask > 0, axis=-1) # (batch, num_games)
+      game_mask_float = tf.expand_dims(tf.cast(game_mask, tf.float32), axis=-1)
+      
+      sum_embeddings = tf.reduce_sum(game_embeddings * game_mask_float, axis=1)
+      count_embeddings = tf.reduce_sum(game_mask_float, axis=1)
+      avg_embeddings = tf.math.divide_no_nan(sum_embeddings, count_embeddings)
+      
+      return avg_embeddings
 
-    # assert(tf.reduce_any(tf.math.is_nan(features1)) == False)
-    # assert(tf.reduce_any(tf.math.is_nan(features2)) == False)
-    # assert(tf.reduce_any(tf.math.is_nan(pos)) == False)
-    
+    features1 = process_player_seq(seq1, mask1)
+    features2 = process_player_seq(seq2, mask2)
+
     combined = tf.concat([features1, features2, tf.cast(pos, tf.float32)], axis=-1)
     
     win_rate = self.wr_pred(combined, training=training)
@@ -295,11 +324,11 @@ def train_model(
     model = tf.keras.models.load_model(start_checkpoint)
 
   model.build(input_shape={ # type: ignore
-    'input1': (None, MAX_MOVES, SEQ_PLANES, 8, 8),
-    'input2': (None, MAX_MOVES, SEQ_PLANES, 8, 8),
+    'input1': (None, 5, MAX_MOVES, SEQ_PLANES, 8, 8),
+    'input2': (None, 5, MAX_MOVES, SEQ_PLANES, 8, 8),
     'pos': (None, POS_PLANES * 8 * 8),
-    'mask1': (None, MAX_MOVES),
-    'mask2': (None, MAX_MOVES)
+    'mask1': (None, 5, MAX_MOVES),
+    'mask2': (None, 5, MAX_MOVES)
   })
 
   if start_checkpoint == "":
