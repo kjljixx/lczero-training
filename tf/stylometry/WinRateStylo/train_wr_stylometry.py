@@ -10,6 +10,8 @@ from stylometry.ViTOneHot.game_aggregate_vit import GameAggregateViT
 from stylometry.WinRateStylo.win_rate_stylo import WinRateStyloModel
 from stylometry.WinRateStylo.pgn_to_training_data import PlayerIndexMapper
 
+os.environ["TF_USE_LEGACY_KERAS"] = "1"
+
 MAX_MOVES = 100
 SEQ_PLANES = 21
 POS_PLANES = 112
