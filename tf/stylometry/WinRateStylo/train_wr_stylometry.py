@@ -103,14 +103,9 @@ def parse_position_example(serialized_example):
   }
   example = tf.io.parse_single_example(serialized_example, feature_description)
   
-  def decode_uint64_workaround(bytes_tensor):
-    #decode as uint8 and then bitcast to int64 to avoid uint64 decode_raw issues
-    u8 = tf.io.decode_raw(bytes_tensor, tf.uint8)
-    return tf.bitcast(tf.reshape(u8, [-1, 8]), tf.int64)
-
-  stm_seq = decode_uint64_workaround(example['stm_player_seq'])
-  opp_seq = decode_uint64_workaround(example['opp_player_seq'])
-  full_board = decode_uint64_workaround(example['full_board_planes'])
+  stm_seq = tf.io.decode_raw(example['stm_player_seq'], tf.int64)
+  opp_seq = tf.io.decode_raw(example['opp_player_seq'], tf.int64)
+  full_board = tf.io.decode_raw(example['full_board_planes'], tf.int64)
   
   # Shapes: (5, 100, 4), (5, 100, 4), (25,)
   stm_seq = tf.reshape(stm_seq, [5, 100, 4])
