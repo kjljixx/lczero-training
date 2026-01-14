@@ -34,12 +34,12 @@ def chessboard_struct_to_lc0_planes(structs, short=False):
       chess_rank = sq // 8
       chess_file = sq % 8
       
-      if occ & (1 << sq):
+      if int(occ) & (1 << sq):
         if pcs_1_idx < 16:
-          val = (pcs_1 >> (4 * pcs_1_idx)) & 0xF
+          val = (int(pcs_1) >> (4 * pcs_1_idx)) & 0xF
           pcs_1_idx += 1
         else:
-          val = (pcs_2 >> (4 * pcs_2_idx)) & 0xF
+          val = (int(pcs_2) >> (4 * pcs_2_idx)) & 0xF
           pcs_2_idx += 1
         
         piece_type = (val & 0x7) + 1
@@ -47,16 +47,16 @@ def chessboard_struct_to_lc0_planes(structs, short=False):
 
         plane_idx = piece_type - 1 + (0 if piece_color == 0 else 6)
         planes[13*pos_idx + plane_idx, chess_rank, chess_file] = 1.0
-    rep_count = (structs[num_positions * 3] >> (2 * pos_idx)) & 0x3
+    rep_count = (int(structs[num_positions * 3]) >> (2 * pos_idx)) & 0x3
     if rep_count >= 1:
       planes[13*pos_idx + 12, :, :] = 1.0
     
-  us_qs = (structs[num_positions * 3] >> 24) & 0x2
-  us_ks = (structs[num_positions * 3] >> 24) & 0x4
-  them_qs = (structs[num_positions * 3] >> 24) & 0x8
-  them_ks = (structs[num_positions * 3] >> 24) & 0x10
-  stm = (structs[num_positions * 3] >> 24) & 0x1
-  halfmove_clock = (structs[num_positions * 3] >> 16) & 0xFF
+  us_qs = (int(structs[num_positions * 3]) >> 24) & 0x2
+  us_ks = (int(structs[num_positions * 3]) >> 24) & 0x4
+  them_qs = (int(structs[num_positions * 3]) >> 24) & 0x8
+  them_ks = (int(structs[num_positions * 3]) >> 24) & 0x10
+  stm = (int(structs[num_positions * 3]) >> 24) & 0x1
+  halfmove_clock = (int(structs[num_positions * 3]) >> 16) & 0xFF
 
   if us_qs:
     planes[13*num_positions + 0, :, :] = 1.0
