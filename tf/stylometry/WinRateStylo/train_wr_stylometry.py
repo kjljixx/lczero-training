@@ -387,7 +387,7 @@ if __name__ == "__main__":
   parser.add_argument("--output-dir", type=str, default="stylometry/WinRateStylo/models")
   parser.add_argument("--start-checkpoint", type=str, default="")
   parser.add_argument("--epochs", type=int, default=500)
-  parser.add_argument("--batch-size", type=int, default=32)
+  parser.add_argument("--batch-size", type=int, default=7)
   parser.add_argument("--learning-rate", type=float, default=1e-4)
   parser.add_argument("--val-split", type=float, default=0.05)
   parser.add_argument("--hidden-dim", type=int, default=128)
