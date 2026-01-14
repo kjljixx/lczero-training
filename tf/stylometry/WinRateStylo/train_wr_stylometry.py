@@ -19,6 +19,9 @@ POS_PLANES = 112
 def chessboard_struct_to_lc0_planes(structs, short=False):
   num_positions = 1 if short else 8
   planes = np.zeros((13*num_positions, 8, 8), dtype=np.int8)
+  
+  #ensure structs are uint64
+  structs = np.asarray(structs, dtype=np.uint64)
 
   pcs_1_idx = 0
   pcs_2_idx = 0
