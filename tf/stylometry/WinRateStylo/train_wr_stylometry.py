@@ -98,9 +98,9 @@ def parse_position_example(serialized_example):
   }
   example = tf.io.parse_single_example(serialized_example, feature_description)
   
-  stm_seq = tf.io.decode_raw(example['stm_player_seq'], tf.uint64)
-  opp_seq = tf.io.decode_raw(example['opp_player_seq'], tf.uint64)
-  full_board = tf.io.decode_raw(example['full_board_planes'], tf.uint64)
+  stm_seq = tf.io.decode_raw(example['stm_player_seq'], tf.int64)
+  opp_seq = tf.io.decode_raw(example['opp_player_seq'], tf.int64)
+  full_board = tf.io.decode_raw(example['full_board_planes'], tf.int64)
   
   # Shapes: (5, 100, 4), (5, 100, 4), (25,)
   stm_seq = tf.reshape(stm_seq, [5, 100, 4])
@@ -126,11 +126,11 @@ def create_position_dataset(
               if random.random() < skip_rate:
                 continue
               
-              stm_seq_uint64, opp_seq_uint64, full_board_uint64, wdl = parse_position_example(raw_record)
+              stm_seq_tensor, opp_seq_tensor, full_board_tensor, wdl = parse_position_example(raw_record)
               
-              stm_seq_np = stm_seq_uint64.numpy()
-              opp_seq_np = opp_seq_uint64.numpy()
-              full_board_np = full_board_uint64.numpy()
+              stm_seq_np = stm_seq_tensor.numpy().astype(np.uint64)
+              opp_seq_np = opp_seq_tensor.numpy().astype(np.uint64)
+              full_board_np = full_board_tensor.numpy().astype(np.uint64)
               
               pos_planes = chessboard_struct_to_lc0_planes(full_board_np, short=False)
               
