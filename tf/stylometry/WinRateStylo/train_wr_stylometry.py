@@ -362,7 +362,8 @@ def train_model(
       histogram_freq=0
     ),
     tf.keras.callbacks.ReduceLROnPlateau(
-      patience=3
+      patience=5,
+      factor=0.5,
     )
   ]
 
