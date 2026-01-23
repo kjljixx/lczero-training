@@ -182,7 +182,7 @@ def extract_game_data(
     board_history.insert(0, board_copy)
 
     curr_clock = node.clock()
-    if board.turn == chess.BLACK and curr_clock is not None
+    if board.turn == chess.BLACK and curr_clock is not None:
       black_clock = int(curr_clock)
     elif board.turn == chess.WHITE and curr_clock is not None:
       white_clock = int(curr_clock)
