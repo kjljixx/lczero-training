@@ -74,13 +74,14 @@ def get_pgns(
 
   return pgn_files
 
-def board_to_chessboard_struct(board_history, repetition_counts, short=False):
+def board_to_chessboard_struct(board_history, clock_history, repetition_counts, short=False):
   structs = []
 
   history_len = len(board_history)
   max_len = 1 if short else 8
   if history_len > max_len:
     board_history = board_history[:max_len]
+    clock_history = clock_history[:max_len]
     repetition_counts = repetition_counts[:max_len]
     history_len = max_len
 
@@ -118,9 +119,9 @@ def board_to_chessboard_struct(board_history, repetition_counts, short=False):
       else:
         pcs_2 |= (val << (4 * (pcs_2_idx)))
         pcs_2_idx += 1
-    structs.extend([occ, pcs_1, pcs_2])
+    structs.extend([occ, pcs_1, pcs_2, clock_history[hist_idx]])
   for _ in range(max_len - history_len):
-    structs.extend([0, 0, 0])
+    structs.extend([0, 0, 0, 0])
 
   #metadata: (5 bits for castling + STM color + 3 bit padding) + (8 bit hm clock) + (8 positions * 2 bits each for repetition count = 16 bits)
   board = board_history[0]
@@ -161,6 +162,9 @@ def extract_game_data(
   black_idx = player_mapper.get_or_create_index(black_name)
 
   board_history = []
+  clock_history = []
+  white_clock = 0
+  black_clock = 0
   position_hashes = []
   repetition_counts = []
 
@@ -173,9 +177,16 @@ def extract_game_data(
   positions = []
   positions_labels = []
 
-  for move_num, move in enumerate(game.mainline_moves()):
+  for move_num, node in enumerate(game.mainline()):
     board_copy = board.copy()
     board_history.insert(0, board_copy)
+
+    curr_clock = node.clock()
+    if board.turn == chess.BLACK and curr_clock is not None
+      black_clock = int(curr_clock)
+    elif board.turn == chess.WHITE and curr_clock is not None:
+      white_clock = int(curr_clock)
+    clock_history.insert(0, (white_clock << 32) | black_clock)
 
     pos_hash = hash(board.fen().split(' ')[0])
     position_hashes.insert(0, pos_hash)
@@ -185,13 +196,13 @@ def extract_game_data(
 
     if len(board_history) > 8:
       board_history = board_history[:8]
+      clock_history = clock_history[:8]
       position_hashes = position_hashes[:8]
       repetition_counts = repetition_counts[:8]
 
-    board_planes = board_to_chessboard_struct(board_history, repetition_counts)
-
+    board_planes = board_to_chessboard_struct(board_history, clock_history, repetition_counts)
     if move_num != 0:
-      if board.turn == chess.WHITE:
+      if board.turn == chess.BLACK:
         #append to BLACK
         sequences[1].append(np.concatenate((board_planes[:3], board_planes[-1:])))
         positions.append((white_idx, black_idx, board_planes))
@@ -206,7 +217,7 @@ def extract_game_data(
           [1, 0, 0] if result == "0-1" else [0, 0, 1] if result == "1-0" else [0, 1, 0]
         )
 
-    board.push(move)
+    board.push(node.move)
 
     if len(sequences[0]) >= max_moves and len(sequences[1]) >= max_moves:
       break

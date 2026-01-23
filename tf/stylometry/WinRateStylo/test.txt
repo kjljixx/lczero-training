@@ -24,3 +24,5 @@ our:
 run2025-12-22-no-stylo: 61.47%
 
 with stylo: 63.14%
+
+with 5-game stylo per player: 63.69%
