@@ -252,7 +252,7 @@ def process_pgns(
   curr_positions = []
 
   curr_pos_shard_idx = 0
-  POS_SHARD_SIZE = 10000/(1 - pos_skip_rate) if pos_skip_rate < 1.0 else 10000
+  POS_SHARD_SIZE = 40000/(1 - pos_skip_rate) if pos_skip_rate < 1.0 else 40000
   if not os.path.exists(output_prefix):
     os.mkdir(output_prefix)
   if not os.path.exists(f"{output_prefix}/pos_shards"):
@@ -293,7 +293,7 @@ def process_pgns(
       white = player_mapper.get_index(game.headers["White"])
       black = player_mapper.get_index(game.headers["Black"])
       rand = random.random()
-      if (seq_counts.get(white, 0) < 50 or seq_counts.get(black, 0) < 50) and rand < 0.4:
+      if (seq_counts.get(white, 0) < 5 or seq_counts.get(black, 0) < 5) and rand < 0.8:
         if white in curr_sequences:
           curr_sequences[white].append(game_data[0][0])
         else:
