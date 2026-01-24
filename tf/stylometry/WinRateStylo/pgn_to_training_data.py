@@ -394,7 +394,7 @@ def process_pgns(
         elo_counts[black_elo_bucket] += len(game_data[1])
 
       game_count += 1
-      if game_count % 20 == 0:
+      if game_count % 100 == 0:
         logger.info(f"Processed: {game_count} games in PGN")
         logger.info(f"In Memory: {len(curr_sequences)} sequences, {len(curr_positions)} positions")
         logger.info(f"WDL dist (from white POV) (not accounting for skipping): {white_wdl_counts}, As Pct: {[f'{100*count/sum(white_wdl_counts):.2f}' for count in white_wdl_counts]}")
