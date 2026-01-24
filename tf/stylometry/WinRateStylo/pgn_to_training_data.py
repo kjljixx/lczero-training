@@ -184,8 +184,8 @@ def extract_game_data(
 
   board_history = []
   clock_history = []
-  white_clock = 0
-  black_clock = 0
+  white_clock = 600 #assume 10 minutes if not specified
+  black_clock = 600
   position_hashes = []
   repetition_counts = []
 
@@ -215,8 +215,6 @@ def extract_game_data(
       repetition_counts = repetition_counts[:8]
 
     if move_num >= 2:
-      if white_clock <= 0 and black_clock <= 0:
-        print("CLOCKS ARE ZEROED")
       board_planes = board_to_chessboard_struct(board_history, clock_history, repetition_counts)
       if board.turn == chess.BLACK:
         #append to BLACK
