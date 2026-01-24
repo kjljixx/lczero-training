@@ -26,3 +26,17 @@ run2025-12-22-no-stylo: 61.47%
 with stylo: 63.14%
 
 with 5-game stylo per player: 63.69%
+
+
+# Data
+
+run2026-01-22
+(not complete)
+2026-01-23 20:30:20,758 - __main__ - INFO - Player count: 97945
+2026-01-23 20:30:20,758 - __main__ - INFO - Has sequences in positions: 5765618/7200190 (80.08%)
+2026-01-23 20:30:22,520 - __main__ - INFO - Processed: 723520 games in PGN
+2026-01-23 20:30:22,521 - __main__ - INFO - In Memory: 16558 sequences, 713949 positions
+2026-01-23 20:30:22,521 - __main__ - INFO - WDL dist (from white POV) (not accounting for skipping): [23118293, 2989942, 22221590], As Pct: ['47.83', '6.19', '45.98']
+2026-01-23 20:30:22,521 - __main__ - INFO - Higher elo WDL dist (not accounting for skipping): [27689917, 2989942, 17649966, 6959], As Pct: ['57.29', '6.19', '36.51', '0.01']
+2026-01-23 20:30:22,521 - __main__ - INFO -
+2026-01-23 20:30:22,521 - __main__ - INFO - Elo counts (not accounting for skipping): {1000: 1260747, 1100: 2678196, 1200: 4775134, 1300: 7316353, 1400: 9913161, 1500: 12644501, 1600: 13399453, 1700: 12980539, 1800: 11366842, 1900: 8255180, 2000: 5442777, 2100: 3083161, 2200: 1682367, 2300: 730450, 2400: 347815, 2500: 134974, 2600: 46161, 2700: 3621, 2800: 1136, 2900: 2084}
