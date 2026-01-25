@@ -19,6 +19,8 @@ POS_PLANES = 112
 def chessboard_struct_to_lc0_planes(structs, short=False):
   num_positions = 1 if short else 8
   planes = np.zeros((13*num_positions+8, 8, 8), dtype=np.int8)
+  clocks = np.zeros((2,), dtype=np.int32)
+  stm = (int(structs[num_positions * 4]) >> 24) & 0x1
   
   #ensure structs are uint64
   structs = np.asarray(structs, dtype=np.uint64)
@@ -26,9 +28,9 @@ def chessboard_struct_to_lc0_planes(structs, short=False):
   pcs_1_idx = 0
   pcs_2_idx = 0
   for pos_idx in range(num_positions):
-    occ = structs[pos_idx * 3]
-    pcs_1 = structs[pos_idx * 3 + 1]
-    pcs_2 = structs[pos_idx * 3 + 2]
+    occ = structs[pos_idx * 4]
+    pcs_1 = structs[pos_idx * 4 + 1]
+    pcs_2 = structs[pos_idx * 4 + 2]
     
     for sq in range(64):
       chess_rank = sq // 8
@@ -47,16 +49,20 @@ def chessboard_struct_to_lc0_planes(structs, short=False):
 
         plane_idx = piece_type - 1 + (0 if piece_color == 0 else 6)
         planes[13*pos_idx + plane_idx, chess_rank, chess_file] = 1.0
-    rep_count = (int(structs[num_positions * 3]) >> (2 * pos_idx)) & 0x3
+    rep_count = (int(structs[num_positions * 4]) >> (2 * pos_idx)) & 0x3
     if rep_count >= 1:
       planes[13*pos_idx + 12, :, :] = 1.0
-    
-  us_qs = (int(structs[num_positions * 3]) >> 24) & 0x2
-  us_ks = (int(structs[num_positions * 3]) >> 24) & 0x4
-  them_qs = (int(structs[num_positions * 3]) >> 24) & 0x8
-  them_ks = (int(structs[num_positions * 3]) >> 24) & 0x10
-  stm = (int(structs[num_positions * 3]) >> 24) & 0x1
-  halfmove_clock = (int(structs[num_positions * 3]) >> 16) & 0xFF
+    if pos_idx == 0:
+      clocks[0] = (int(structs[pos_idx * 4 + 3]) >> 32)
+      clocks[1] = (int(structs[pos_idx * 4 + 3]) & 0xFFFFFFFF)
+      if stm == 1:
+        clocks[0], clocks[1] = clocks[1], clocks[0]
+      
+  us_qs = (int(structs[num_positions * 4]) >> 24) & 0x2
+  us_ks = (int(structs[num_positions * 4]) >> 24) & 0x4
+  them_qs = (int(structs[num_positions * 4]) >> 24) & 0x8
+  them_ks = (int(structs[num_positions * 4]) >> 24) & 0x10
+  halfmove_clock = (int(structs[num_positions * 4]) >> 16) & 0xFF
 
   if us_qs:
     planes[13*num_positions + 0, :, :] = 1.0
@@ -72,7 +78,10 @@ def chessboard_struct_to_lc0_planes(structs, short=False):
   planes[13*num_positions + 6, :, :] = 0.0
   planes[13*num_positions + 7, :, :] = 1.0
 
-  return planes
+  clocks_plane = np.zeros((8, 8), dtype=np.int32)
+  clocks_plane[:4, :] = clocks[0]
+  clocks_plane[4:, :] = clocks[1]
+  return planes, clocks_plane
 
 def pad_sequence(
   sequence: List[np.ndarray],
@@ -107,10 +116,10 @@ def parse_position_example(serialized_example):
   opp_seq = tf.io.decode_raw(example['opp_player_seq'], tf.int64)
   full_board = tf.io.decode_raw(example['full_board_planes'], tf.int64)
   
-  # Shapes: (5, 100, 4), (5, 100, 4), (25,)
-  stm_seq = tf.reshape(stm_seq, [5, 100, 4])
-  opp_seq = tf.reshape(opp_seq, [5, 100, 4])
-  full_board = tf.reshape(full_board, [25])
+  # Shapes: (5, 100, 5), (5, 100, 5), (25,)
+  stm_seq = tf.reshape(stm_seq, [5, 100, 5])
+  opp_seq = tf.reshape(opp_seq, [5, 100, 5])
+  full_board = tf.reshape(full_board, [33])
   
   return stm_seq, opp_seq, full_board, example['wdl']
 
@@ -137,27 +146,31 @@ def create_position_dataset(
               opp_seq_np = opp_seq_tensor.numpy().astype(np.uint64)
               full_board_np = full_board_tensor.numpy().astype(np.uint64)
               
-              pos_planes = chessboard_struct_to_lc0_planes(full_board_np, short=False)
+              pos_planes, pos_clocks = chessboard_struct_to_lc0_planes(full_board_np, short=False)
               
               def process_seq(seq_np):
-                planes_all_games = np.zeros((5, 100, 21, 8, 8), dtype=np.int8)
+                planes_all_games = np.zeros((5, 100, SEQ_PLANES, 8, 8), dtype=np.int8)
+                clocks_all_games = np.zeros((5, 100, 8, 8), dtype=np.int32)
                 mask_all_games = np.zeros((5, 100), dtype=np.int8)
                 for g_idx in range(5):
                   for m_idx in range(100):
                     struct = seq_np[g_idx, m_idx]
                     if np.any(struct > 0):
-                      planes_all_games[g_idx, m_idx] = chessboard_struct_to_lc0_planes(struct, short=True)
+                      planes_all_games[g_idx, m_idx], clocks_all_games[g_idx, m_idx] = chessboard_struct_to_lc0_planes(struct, short=True)
                       mask_all_games[g_idx, m_idx] = 1
-                return planes_all_games, mask_all_games
+                return planes_all_games, mask_all_games, clocks_all_games
 
-              stm_planes, stm_mask = process_seq(stm_seq_np)
-              opp_planes, opp_mask = process_seq(opp_seq_np)
+              stm_planes, stm_mask, stm_clocks = process_seq(stm_seq_np)
+              opp_planes, opp_mask, opp_clocks = process_seq(opp_seq_np)
               
               yield (
                 {
                   'input1': stm_planes,
+                  'input1_clocks': stm_clocks,
                   'input2': opp_planes,
+                  'input2_clocks': opp_clocks,
                   'pos': pos_planes.flatten(),
+                  'pos_clocks': pos_clocks,
                   'mask1': stm_mask,
                   'mask2': opp_mask
                 },
@@ -175,8 +188,11 @@ def create_position_dataset(
   output_signature = (
     {
       'input1': tf.TensorSpec(shape=(5, MAX_MOVES, SEQ_PLANES, 8, 8), dtype=tf.int8), # type: ignore
+      'input1_clocks': tf.TensorSpec(shape=(5, MAX_MOVES, 8, 8), dtype=tf.int32), # type: ignore
       'input2': tf.TensorSpec(shape=(5, MAX_MOVES, SEQ_PLANES, 8, 8), dtype=tf.int8), # type: ignore
+      'input2_clocks': tf.TensorSpec(shape=(5, MAX_MOVES, 8, 8), dtype=tf.int32), # type: ignore
       'pos': tf.TensorSpec(shape=(POS_PLANES * 8 * 8,), dtype=tf.int8), # type: ignore
+      'pos_clocks': tf.TensorSpec(shape=(8, 8), dtype=tf.int32), # type: ignore
       'mask1': tf.TensorSpec(shape=(5, MAX_MOVES,), dtype=tf.int8), # type: ignore
       'mask2': tf.TensorSpec(shape=(5, MAX_MOVES,), dtype=tf.int8) # type: ignore
     },
@@ -234,10 +250,12 @@ class ScaffoldedViTAndWinRate(tf.keras.Model):
       mask1 = inputs.get('mask1', None)
       mask2 = inputs.get('mask2', None)
       pos = inputs.get('pos', None)
+      pos_clocks = inputs.get('pos_clocks', None)
     else:
       seq1, seq2 = inputs
       mask1 = mask2 = None
       pos = None
+      pos_clocks = None
     
     def process_player_seq(seq, mask):
       seq_unstacked = tf.unstack(seq, axis=1)
@@ -262,7 +280,11 @@ class ScaffoldedViTAndWinRate(tf.keras.Model):
     features1 = process_player_seq(seq1, mask1)
     features2 = process_player_seq(seq2, mask2)
 
-    combined = tf.concat([features1, features2, tf.cast(pos, tf.float32)], axis=-1)
+    pos = tf.cast(pos, tf.float32)
+    assert pos_clocks is not None
+    pos[111] = tf.cast(pos_clocks, tf.float32)
+
+    combined = tf.concat([features1, features2, pos], axis=-1)
     
     win_rate = self.wr_pred(combined, training=training)
     

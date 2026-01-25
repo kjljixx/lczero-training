@@ -218,14 +218,14 @@ def extract_game_data(
       board_planes = board_to_chessboard_struct(board_history, clock_history, repetition_counts)
       if board.turn == chess.BLACK:
         #append to BLACK
-        sequences[1].append(np.concatenate((board_planes[:3], board_planes[-1:])))
+        sequences[1].append(np.concatenate((board_planes[:4], board_planes[-1:])))
         positions.append((white_idx, black_idx, board_planes))
         positions_labels.append(
           [0, 0, 1] if result == "1-0" else [1, 0, 0] if result == "0-1" else [0, 1, 0]
         )
       else:
         #append to WHITE
-        sequences[0].append(np.concatenate((board_planes[:3], board_planes[-1:])))
+        sequences[0].append(np.concatenate((board_planes[:4], board_planes[-1:])))
         positions.append((black_idx, white_idx, board_planes))
         positions_labels.append(
           [0, 0, 1] if result == "0-1" else [1, 0, 0] if result == "1-0" else [0, 1, 0]
@@ -423,7 +423,7 @@ def save_shard(shard_path, items, serialize_function):
 
 def serialize_position(paired_position):
   def pad_and_flatten(games, max_games=5, max_moves=100):
-    all_game_moves = np.zeros((max_games, max_moves, 4), dtype=np.uint64)
+    all_game_moves = np.zeros((max_games, max_moves, 5), dtype=np.uint64)
     for i, game in enumerate(games[:max_games]):
       if not game:
         continue
