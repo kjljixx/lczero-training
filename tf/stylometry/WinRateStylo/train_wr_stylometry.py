@@ -334,7 +334,7 @@ def train_model(
   )
 
   wr_model = WinRateStyloModel(
-    style_vec_size=hidden_dim+2,
+    style_vec_size=hidden_dim+1,
     num_hidden_layers=wr_ffn_layers,
     hidden_dim=wr_ffn_hidden_dim
   )
