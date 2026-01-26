@@ -388,10 +388,10 @@ def train_model(
       log_dir=os.path.join(output_dir, 'logs'),
       histogram_freq=0
     ),
-    tf.keras.callbacks.ReduceLROnPlateau(
-      patience=5,
-      factor=0.5,
-    )
+    # tf.keras.callbacks.ReduceLROnPlateau(
+    #   patience=5,
+    #   factor=0.5,
+    # )
   ]
 
   print(f"Starting training for {epochs} epochs...")
