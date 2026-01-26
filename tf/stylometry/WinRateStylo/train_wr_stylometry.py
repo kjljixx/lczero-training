@@ -282,7 +282,12 @@ class ScaffoldedViTAndWinRate(tf.keras.Model):
 
     pos = tf.cast(pos, tf.float32)
     if pos_clocks is not None:
-      pos = tf.tensor_scatter_nd_update(pos, [[110]], [tf.cast(pos_clocks, tf.float32)])
+      clocks_flat = tf.reshape(tf.cast(pos_clocks, tf.float32), [-1, 64])
+      pos = tf.concat([
+          pos[:, :110],
+          clocks_flat,
+          pos[:, 110 + 64:]
+      ], axis=1)
 
     combined = tf.concat([features1, features2, pos], axis=-1)
     
