@@ -282,6 +282,7 @@ class ScaffoldedViTAndWinRate(tf.keras.Model):
     if not pos_clocks is None:
       print("hi")
     else:
+      print("bye")
       pos_clocks = tf.zeros((tf.shape(pos)[0], 2), dtype=tf.int32)
 
     combined = tf.concat([features1, features2, tf.cast(pos_clocks, tf.float32), pos], axis=-1)
