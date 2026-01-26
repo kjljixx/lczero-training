@@ -324,7 +324,7 @@ def train_model(
     train_pos_shards, batch_size, shuffle=True, repeat=True
   )
   val_dataset = create_position_dataset(
-    val_pos_shards, batch_size, shuffle=False, repeat=False
+    val_pos_shards, batch_size, shuffle=False, repeat=False, skip_rate=0.8
   )
 
   print("Creating model...")
@@ -399,7 +399,7 @@ def train_model(
     train_dataset,
     validation_data=val_dataset,
     epochs=epochs,
-    steps_per_epoch=10000,
+    steps_per_epoch=5000,
     callbacks=callbacks,
     verbose=1 # type: ignore
   )
