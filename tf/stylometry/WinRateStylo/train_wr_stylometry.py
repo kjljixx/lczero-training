@@ -251,7 +251,6 @@ class ScaffoldedViTAndWinRate(tf.keras.Model):
       mask2 = inputs.get('mask2', None)
       pos = inputs.get('pos', None)
       pos_clocks = inputs.get('pos_clocks', None)
-      assert pos_clocks is not None
     else:
       seq1, seq2 = inputs
       mask1 = mask2 = None
