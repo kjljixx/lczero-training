@@ -403,9 +403,9 @@ if __name__ == "__main__":
   parser.add_argument("--batch-size", type=int, default=7)
   parser.add_argument("--learning-rate", type=float, default=1e-4)
   parser.add_argument("--val-split", type=float, default=0.05)
-  parser.add_argument("--hidden-dim", type=int, default=128)
-  parser.add_argument("--wr-ffn-layers", type=int, default=2)
-  parser.add_argument("--wr-ffn-hidden-dim", type=int, default=128)
+  parser.add_argument("--hidden-dim", type=int, default=256)
+  parser.add_argument("--wr-ffn-layers", type=int, default=6)
+  parser.add_argument("--wr-ffn-hidden-dim", type=int, default=256)
 
   random.seed(42)
 
@@ -431,7 +431,7 @@ if __name__ == "__main__":
     val_split=args.val_split,
     num_layers=6,
     num_heads=4,
-    mlp_dim=128,
+    mlp_dim=256,
     hidden_dim=args.hidden_dim,
     wr_ffn_layers=args.wr_ffn_layers,
     wr_ffn_hidden_dim=args.wr_ffn_hidden_dim
