@@ -399,7 +399,7 @@ def train_model(
     train_dataset,
     validation_data=val_dataset,
     epochs=epochs,
-    steps_per_epoch=5000,
+    steps_per_epoch=10000,
     callbacks=callbacks,
     verbose=1 # type: ignore
   )
@@ -429,7 +429,7 @@ if __name__ == "__main__":
   parser.add_argument("--epochs", type=int, default=500)
   parser.add_argument("--batch-size", type=int, default=7)
   parser.add_argument("--learning-rate", type=float, default=1e-4)
-  parser.add_argument("--val-split", type=float, default=0.05)
+  parser.add_argument("--val-split", type=float, default=0.01)
   parser.add_argument("--hidden-dim", type=int, default=256)
   parser.add_argument("--wr-ffn-layers", type=int, default=6)
   parser.add_argument("--wr-ffn-hidden-dim", type=int, default=256)
