@@ -128,59 +128,56 @@ def create_position_dataset(
   repeat: bool = True
 ) -> tf.data.Dataset:
   def generator():
-    while True:
-      for shard_path in pos_shard_paths:
-        try:
-          dataset = tf.data.TFRecordDataset(shard_path)
-          for raw_record in dataset:
-            try:
-              if random.random() < skip_rate:
-                continue
-              
-              stm_seq_tensor, opp_seq_tensor, full_board_tensor, wdl = parse_position_example(raw_record)
-              
-              stm_seq_np = stm_seq_tensor.numpy().astype(np.uint64)
-              opp_seq_np = opp_seq_tensor.numpy().astype(np.uint64)
-              full_board_np = full_board_tensor.numpy().astype(np.uint64)
-              
-              pos_planes, pos_clocks = chessboard_struct_to_lc0_planes(full_board_np, short=False)
-              
-              def process_seq(seq_np):
-                planes_all_games = np.zeros((5, 100, SEQ_PLANES, 8, 8), dtype=np.int8)
-                clocks_all_games = np.zeros((5, 100, 2), dtype=np.int32)
-                mask_all_games = np.zeros((5, 100), dtype=np.int8)
-                for g_idx in range(5):
-                  for m_idx in range(100):
-                    struct = seq_np[g_idx, m_idx]
-                    if np.any(struct > 0):
-                      planes_all_games[g_idx, m_idx], clocks_all_games[g_idx, m_idx] = chessboard_struct_to_lc0_planes(struct, short=True)
-                      mask_all_games[g_idx, m_idx] = 1
-                return planes_all_games, mask_all_games, clocks_all_games
-
-              stm_planes, stm_mask, stm_clocks = process_seq(stm_seq_np)
-              opp_planes, opp_mask, opp_clocks = process_seq(opp_seq_np)
-              
-              yield (
-                {
-                  'input1': stm_planes,
-                  'input1_clocks': stm_clocks,
-                  'input2': opp_planes,
-                  'input2_clocks': opp_clocks,
-                  'pos': pos_planes.flatten(),
-                  'pos_clocks': pos_clocks,
-                  'mask1': stm_mask,
-                  'mask2': opp_mask
-                },
-                wdl.numpy()
-              )
-            except Exception as e:
-              print(f"Skipping corrupted record in {shard_path}: {e}")
+    for shard_path in pos_shard_paths:
+      try:
+        dataset = tf.data.TFRecordDataset(shard_path)
+        for raw_record in dataset:
+          try:
+            if random.random() < skip_rate:
               continue
-        except Exception as e:
-          print(f"Skipping corrupted shard {shard_path}: {e}")
-          continue
-      if not repeat:
-        break
+            
+            stm_seq_tensor, opp_seq_tensor, full_board_tensor, wdl = parse_position_example(raw_record)
+            
+            stm_seq_np = stm_seq_tensor.numpy().astype(np.uint64)
+            opp_seq_np = opp_seq_tensor.numpy().astype(np.uint64)
+            full_board_np = full_board_tensor.numpy().astype(np.uint64)
+            
+            pos_planes, pos_clocks = chessboard_struct_to_lc0_planes(full_board_np, short=False)
+            
+            def process_seq(seq_np):
+              planes_all_games = np.zeros((5, 100, SEQ_PLANES, 8, 8), dtype=np.int8)
+              clocks_all_games = np.zeros((5, 100, 2), dtype=np.int32)
+              mask_all_games = np.zeros((5, 100), dtype=np.int8)
+              for g_idx in range(5):
+                for m_idx in range(100):
+                  struct = seq_np[g_idx, m_idx]
+                  if np.any(struct > 0):
+                    planes_all_games[g_idx, m_idx], clocks_all_games[g_idx, m_idx] = chessboard_struct_to_lc0_planes(struct, short=True)
+                    mask_all_games[g_idx, m_idx] = 1
+              return planes_all_games, mask_all_games, clocks_all_games
+
+            stm_planes, stm_mask, stm_clocks = process_seq(stm_seq_np)
+            opp_planes, opp_mask, opp_clocks = process_seq(opp_seq_np)
+            
+            yield (
+              {
+                'input1': stm_planes,
+                'input1_clocks': stm_clocks,
+                'input2': opp_planes,
+                'input2_clocks': opp_clocks,
+                'pos': pos_planes.flatten(),
+                'pos_clocks': pos_clocks,
+                'mask1': stm_mask,
+                'mask2': opp_mask
+              },
+              wdl.numpy()
+            )
+          except Exception as e:
+            print(f"Skipping corrupted record in {shard_path}: {e}")
+            continue
+      except Exception as e:
+        print(f"Skipping corrupted shard {shard_path}: {e}")
+        continue
 
   output_signature = (
     {
@@ -196,7 +193,10 @@ def create_position_dataset(
     tf.TensorSpec(shape=(3,), dtype=tf.float32) # type: ignore
   )
 
-  dataset = tf.data.Dataset.from_generator(generator, output_signature=output_signature)
+  if repeat:
+    dataset = tf.data.Dataset.from_generator(generator, output_signature=output_signature).repeat()
+  else:
+    dataset = tf.data.Dataset.from_generator(generator, output_signature=output_signature)
   if shuffle:
     dataset = dataset.shuffle(buffer_size=1000)
   dataset = dataset.batch(batch_size)
@@ -279,11 +279,8 @@ class ScaffoldedViTAndWinRate(tf.keras.Model):
 
     pos = tf.cast(pos, tf.float32)
 
-    if not pos_clocks is None:
-      print("hi")
-    else:
-      print("bye")
-      pos_clocks = tf.zeros((tf.shape(pos)[0], 2), dtype=tf.int32)
+    if pos_clocks is None:
+      pos_clocks = tf.fill((tf.shape(pos)[0], 2), 600)
 
     combined = tf.concat([features1, features2, tf.cast(pos_clocks, tf.float32), pos], axis=-1)
     
@@ -322,6 +319,13 @@ def train_model(
   val_dataset = create_position_dataset(
     val_pos_shards, batch_size, shuffle=False, repeat=False, skip_rate=0.8
   )
+
+  for x, y in train_dataset.take(1):
+    print("Sample batch shapes:")
+    for key in x:
+      print(f"  {key}: {x[key].shape}")
+    print(f"  labels: {y.shape}")
+    print(x["pos_clocks"])
 
   print("Creating model...")
 
