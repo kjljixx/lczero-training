@@ -282,7 +282,7 @@ class ScaffoldedViTAndWinRate(tf.keras.Model):
     if pos_clocks is None:
       pos_clocks = tf.fill((tf.shape(pos)[0], 2), 600)
 
-    combined = tf.concat([features1, features2, tf.cast(pos_clocks, tf.float32), pos], axis=-1)
+    combined = tf.concat([features1, features2, pos], axis=-1)
     
     win_rate = self.wr_pred(combined, training=training)
     
