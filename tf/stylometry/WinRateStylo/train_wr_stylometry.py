@@ -362,6 +362,9 @@ def train_model(
     print(f"  labels: {y.shape}")
     print(x["pos_clocks"])
     print(model(x, training=False))
+    x["pos_clocks"] = tf.fill((tf.shape(x["pos"])[0], 2), 600)
+    print(x["pos_clocks"])
+    print(model(x, training=False))
 
   if start_checkpoint == "":
     print(stylo_model.summary())
