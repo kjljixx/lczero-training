@@ -349,22 +349,14 @@ def train_model(
 
   model.build(input_shape={ # type: ignore
     'input1': (None, 5, MAX_MOVES, SEQ_PLANES, 8, 8),
+    'input1_clocks': (None, 5, MAX_MOVES, 2),
     'input2': (None, 5, MAX_MOVES, SEQ_PLANES, 8, 8),
+    'input2_clocks': (None, 5, MAX_MOVES, 2),
     'pos': (None, POS_PLANES * 8 * 8),
+    'pos_clocks': (None, 2),
     'mask1': (None, 5, MAX_MOVES),
     'mask2': (None, 5, MAX_MOVES)
   })
-
-  for x, y in train_dataset.take(1):
-    print("Sample batch shapes:")
-    for key in x:
-      print(f"  {key}: {x[key].shape}")
-    print(f"  labels: {y.shape}")
-    print(x["pos_clocks"])
-    print(model(x, training=False))
-    x["pos_clocks"] = tf.fill((tf.shape(x["pos"])[0], 2), 600)
-    print(x["pos_clocks"])
-    print(model(x, training=False))
 
   if start_checkpoint == "":
     print(stylo_model.summary())
