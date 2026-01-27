@@ -395,7 +395,7 @@ def train_model(
     train_dataset,
     validation_data=val_dataset,
     epochs=epochs,
-    steps_per_epoch=5000,
+    steps_per_epoch=0,
     callbacks=callbacks,
     verbose=1 # type: ignore
   )
