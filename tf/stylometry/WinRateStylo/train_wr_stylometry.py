@@ -320,13 +320,6 @@ def train_model(
     val_pos_shards, batch_size, shuffle=False, repeat=False, skip_rate=0.8
   )
 
-  for x, y in train_dataset.take(1):
-    print("Sample batch shapes:")
-    for key in x:
-      print(f"  {key}: {x[key].shape}")
-    print(f"  labels: {y.shape}")
-    print(x["pos_clocks"])
-
   print("Creating model...")
 
   stylo_model = GameAggregateViT(
@@ -361,6 +354,14 @@ def train_model(
     'mask1': (None, 5, MAX_MOVES),
     'mask2': (None, 5, MAX_MOVES)
   })
+
+  for x, y in train_dataset.take(1):
+    print("Sample batch shapes:")
+    for key in x:
+      print(f"  {key}: {x[key].shape}")
+    print(f"  labels: {y.shape}")
+    print(x["pos_clocks"])
+    print(model(x, training=False))
 
   if start_checkpoint == "":
     print(stylo_model.summary())
