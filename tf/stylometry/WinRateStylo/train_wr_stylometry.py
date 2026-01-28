@@ -338,14 +338,15 @@ def train_model(
   )
 
   model = ScaffoldedViTAndWinRate(stylo_model, wr_model)
+  if start_checkpoint != "":
+    model = tf.keras.models.load_model(start_checkpoint)
+    print(f"Loaded checkpoint from {start_checkpoint}")
+  assert isinstance(model, ScaffoldedViTAndWinRate)
   model.compile(
     optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
     loss=tf.keras.losses.CategoricalCrossentropy(from_logits=True),
     metrics=['accuracy', tf.keras.metrics.TopKCategoricalAccuracy(k=3, name='top3_accuracy')]
   )
-
-  if start_checkpoint != "":
-    model = tf.keras.models.load_model(start_checkpoint)
 
   model.build(input_shape={ # type: ignore
     'input1': (None, 5, MAX_MOVES, SEQ_PLANES, 8, 8),
