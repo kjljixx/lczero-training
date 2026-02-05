@@ -39,3 +39,12 @@ run2026-01-22
 2026-01-26 00:32:53,119 - __main__ - INFO - Elo counts (not accounting for skipping): {1000: 5802186, 1100: 12289895, 1200: 21839282, 1300: 34083905, 1400: 46183332, 1500: 57608913, 1600: 61672156, 1700: 60719123, 1800: 52193980, 1900: 38871093, 2000: 25247144, 2100: 14387876, 2200: 8064286, 2300: 3782352, 2400: 1687646, 2500: 584869, 2600: 236374, 2700: 37940, 2800: 2399, 2900: 2293}
 2026-01-26 00:32:53,119 - __main__ - INFO - Player count: 153231
 2026-01-26 00:32:53,119 - __main__ - INFO - Has sequences in positions: 28241732/35201450 (80.23%)
+Stockfish Depth 10:
+Engine predicted WDL dist matrix (not accounting for skipping, [engine_pred][actual]): [[1105125, 83271, 414744], [851859, 125159, 835262], [355071, 77879, 971844]], As Pct: ['33.26', '37.60', '29.14'], Accuracy: 45.69%, Accuracy w/o draws: 59.35%
+
+-data is 2017 instead of 2013 to have clock annotations
+-data seems more difficult - higher elo baseline scores 57.35% instead of 60.98%
+-lr drops are just manual now
+
+run2026-01-12: 0.5834
+run2026-01-22: 0.6521

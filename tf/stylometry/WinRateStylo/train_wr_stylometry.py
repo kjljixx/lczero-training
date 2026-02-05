@@ -274,8 +274,10 @@ class ScaffoldedViTAndWinRate(tf.keras.Model):
       
       return avg_embeddings
 
-    features1 = process_player_seq(seq1, mask1)
-    features2 = process_player_seq(seq2, mask2)
+    # features1 = process_player_seq(seq1, mask1)
+    # features2 = process_player_seq(seq2, mask2)
+    features1 = np.zeros((tf.shape(seq1)[0], self.vit.hidden_dim))
+    features2 = np.zeros((tf.shape(seq2)[0], self.vit.hidden_dim))
 
     pos = tf.cast(pos, tf.float32)
 
