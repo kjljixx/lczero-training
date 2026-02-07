@@ -276,8 +276,8 @@ class ScaffoldedViTAndWinRate(tf.keras.Model):
 
     # features1 = process_player_seq(seq1, mask1)
     # features2 = process_player_seq(seq2, mask2)
-    features1 = np.zeros((tf.shape(pos)[0], self.vit.hidden_dim))
-    features2 = np.zeros((tf.shape(pos)[0], self.vit.hidden_dim))
+    features1 = tf.zeros((tf.shape(pos)[0], self.vit.hidden_dim))
+    features2 = tf.zeros((tf.shape(pos)[0], self.vit.hidden_dim))
 
     pos = tf.cast(pos, tf.float32)
 
