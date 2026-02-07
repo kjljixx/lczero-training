@@ -361,9 +361,9 @@ def train_model(
     'mask2': (None, 5, MAX_MOVES)
   })
 
-  if start_checkpoint == "":
-    print(stylo_model.summary())
-    print(wr_model.summary())
+  # if start_checkpoint == "":
+  #   print(stylo_model.summary())
+  #   print(wr_model.summary())
 
   class LearningRateLogger(tf.keras.callbacks.Callback):
       def __init__(self):
