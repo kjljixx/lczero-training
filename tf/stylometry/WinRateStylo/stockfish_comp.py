@@ -16,7 +16,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 DO_ENGINE_EVAL = True
-engine = chess.engine.SimpleEngine.popen_uci("./stylometry/WinRateStylo/engines/stockfish-17-1")
+engine = chess.engine.SimpleEngine.popen_uci("./stylometry/WinRateStylo/engines/stockfish/stockfish-ubuntu-x86-64-avx2")
 engine.configure({"UCI_ShowWDL": True})
 
 def process_pgns(
