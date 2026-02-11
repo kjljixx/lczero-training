@@ -50,9 +50,6 @@ def process_pgns(
       result = game.headers.get("Result", "*")
 
       for move_num, pos in enumerate(game.mainline()):
-        board = pos.board()
-        eval_wdl = engine_eval(board)
-        logger.info(f"Eval score for position: {eval_wdl}")
         board_copy = board.copy(stack=False)
         board_history.insert(0, board_copy)
 
