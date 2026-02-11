@@ -7,6 +7,9 @@ import random
 import tensorflow as tf
 from typing import Dict, List, Tuple, Optional
 import logging
+import argparse
+import glob
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -445,9 +448,6 @@ def serialize_position(paired_position):
   return tf.train.Example(features=tf.train.Features(feature=feature)).SerializeToString()
 
 if __name__ == "__main__":
-  import argparse
-  import glob
-  import os
 
   logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
