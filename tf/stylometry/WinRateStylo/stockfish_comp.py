@@ -3,9 +3,12 @@ os.environ["TF_USE_LEGACY_KERAS"] = "1"
 import tensorflow as tf
 from tensorflow import keras
 import numpy as np
-from stylometry.WinRateStylo.pgn_to_training_data import board_to_chessboard_struct, engine_eval, DO_ENGINE_EVAL
+from stylometry.WinRateStylo.pgn_to_training_data import board_to_chessboard_struct, engine_eval, DO_ENGINE_EVAL, get_pgns
 from stylometry.WinRateStylo.train_wr_stylometry import ScaffoldedViTAndWinRate, chessboard_struct_to_lc0_planes, MAX_MOVES, SEQ_PLANES
 import chess
+import chess.pgn
+import chess.engine
+import chess.polyglot
 import random
 from typing import List
 import logging
@@ -88,3 +91,26 @@ def process_pgns(
         clock_history.insert(0, (white_clock << 32) | black_clock)
 
         board.push(pos.move)
+
+if __name__ == "__main__":
+  import argparse
+  import glob
+  import os
+
+  logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
+  np.random.seed(42)
+  random.seed(42)
+
+  parser = argparse.ArgumentParser(
+    description="Convert PGN files to training data"
+  )
+  parser.add_argument("inputs", nargs="+",
+                     help="Input PGN file(s) or folder(s) containing PGN files")
+  parser.add_argument("model", help="Path to the trained model to use for evaluation")
+
+  args = parser.parse_args()
+
+  pgn_files = get_pgns(args.inputs)
+
+  process_pgns(pgn_paths=pgn_files, model_path=args.model)
