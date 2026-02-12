@@ -119,19 +119,12 @@ def process_tfrecords(
     custom_objects={"ScaffoldedViTAndWinRate": ScaffoldedViTAndWinRate}
   )
 
-  m_total = 0
+  total = 0
   m_correct = 0
-  m_correct_nd = 0
-  m_total_nd = 0
-  m_loss_sum = 0.0
   m_confusion = np.zeros((3, 3), dtype=np.int64)
-
-  sf_total = 0
   sf_correct = 0
-  sf_correct_nd = 0
-  sf_total_nd = 0
-  sf_loss_sum = 0.0
   sf_confusion = np.zeros((3, 3), dtype=np.int64)
+  m_correct_sf_wrong = 0
 
   for tfrecord_idx, tfrecord_path in enumerate(tfrecord_paths):
     logger.info(f"Processing {tfrecord_path} ({tfrecord_idx + 1}/{len(tfrecord_paths)})...")
@@ -140,6 +133,7 @@ def process_tfrecords(
     pos_batch = []
     clocks_batch = []
     wdl_batch = []
+    structs_batch = []
 
     for raw_record in dataset:
       if random.random() < skip_rate:
@@ -155,77 +149,56 @@ def process_tfrecords(
       wdl_np = wdl.numpy()
       pos_planes, pos_clocks = chessboard_struct_to_lc0_planes(full_board_np, short=False)
 
-      board = struct_to_board(full_board_np)
-      sf_wdl_raw = pgn_data.engine_eval(board)
-      sf_probs = engine_wdl_to_stm_probs(sf_wdl_raw, board.turn)
-      sf_pred = int(np.argmax(sf_probs))
-      actual = int(np.argmax(wdl_np))
-
-      sf_total += 1
-      sf_correct += int(sf_pred == actual)
-      sf_confusion[sf_pred, actual] += 1
-      sf_loss_sum += float(-np.sum(wdl_np * np.log(sf_probs)))
-      if actual != 1:
-        sf_total_nd += 1
-        sf_correct_nd += int(sf_pred == actual)
-
       pos_batch.append(pos_planes.flatten())
       clocks_batch.append(pos_clocks)
       wdl_batch.append(wdl_np)
+      structs_batch.append(full_board_np)
 
       if len(pos_batch) >= batch_size:
-        results = run_batch(model, pos_batch, clocks_batch, wdl_batch)
-        m_total += results["count"]
-        m_correct += results["correct_top1"]
-        m_correct_nd += results["correct_top1_no_draw"]
-        m_total_nd += results["total_no_draw"]
-        m_loss_sum += results["loss_sum"]
-        m_confusion += results["confusion"]
+        results = run_batch(model, pos_batch, clocks_batch, wdl_batch, structs_batch)
+        total += results["count"]
+        m_correct += results["m_correct"]
+        m_confusion += results["m_confusion"]
+        sf_correct += results["sf_correct"]
+        sf_confusion += results["sf_confusion"]
+        m_correct_sf_wrong += results["m_correct_sf_wrong"]
         pos_batch = []
         clocks_batch = []
         wdl_batch = []
+        structs_batch = []
 
     if len(pos_batch) > 0:
-      results = run_batch(model, pos_batch, clocks_batch, wdl_batch)
-      m_total += results["count"]
-      m_correct += results["correct_top1"]
-      m_correct_nd += results["correct_top1_no_draw"]
-      m_total_nd += results["total_no_draw"]
-      m_loss_sum += results["loss_sum"]
-      m_confusion += results["confusion"]
+      results = run_batch(model, pos_batch, clocks_batch, wdl_batch, structs_batch)
+      total += results["count"]
+      m_correct += results["m_correct"]
+      m_confusion += results["m_confusion"]
+      sf_correct += results["sf_correct"]
+      sf_confusion += results["sf_confusion"]
+      m_correct_sf_wrong += results["m_correct_sf_wrong"]
       pos_batch = []
       clocks_batch = []
       wdl_batch = []
+      structs_batch = []
 
-    if m_total > 0:
+    if total > 0:
       logger.info(
-        f"Running - n={m_total}, "
-        f"model_acc={m_correct / m_total:.4f}, "
-        f"model_acc_nd={m_correct_nd / m_total_nd if m_total_nd > 0 else 0:.4f}, "
-        f"model_loss={m_loss_sum / m_total:.4f}, "
-        f"sf_acc={sf_correct / sf_total:.4f}, "
-        f"sf_acc_nd={sf_correct_nd / sf_total_nd if sf_total_nd > 0 else 0:.4f}, "
-        f"sf_loss={sf_loss_sum / sf_total:.4f}"
+        f"Running - n={total}, "
+        f"model_acc={m_correct / total:.4f}, "
+        f"sf_acc={sf_correct / total:.4f}, "
+        f"model_right_sf_wrong={m_correct_sf_wrong}"
       )
 
   logger.info("=== Final Results ===")
-  logger.info(f"Total positions: {m_total}")
-  if m_total > 0:
-    logger.info(
-      f"Model - acc={m_correct / m_total:.4f}, "
-      f"acc_nd={m_correct_nd / m_total_nd if m_total_nd > 0 else 0:.4f}, "
-      f"loss={m_loss_sum / m_total:.4f}"
-    )
+  logger.info(f"Total positions: {total}")
+  if total > 0:
+    logger.info(f"Model - correct={m_correct}/{total} ({m_correct / total:.4f})")
     logger.info(f"Model confusion [pred][actual] (W/D/L):\n{m_confusion}")
-    logger.info(
-      f"SF    - acc={sf_correct / sf_total:.4f}, "
-      f"acc_nd={sf_correct_nd / sf_total_nd if sf_total_nd > 0 else 0:.4f}, "
-      f"loss={sf_loss_sum / sf_total:.4f}"
-    )
+    logger.info(f"SF    - correct={sf_correct}/{total} ({sf_correct / total:.4f})")
     logger.info(f"SF confusion [pred][actual] (W/D/L):\n{sf_confusion}")
+    logger.info(f"Model correct & SF wrong: {m_correct_sf_wrong}")
 
 
-def run_batch(model, pos_batch, clocks_batch, wdl_batch):
+def run_batch(model, pos_batch, clocks_batch, wdl_batch, structs_batch):
   pos_tensor = tf.cast(np.array(pos_batch), tf.float32)
   clocks_tensor = tf.cast(np.array(clocks_batch), tf.float32)
   wdl_np = np.array(wdl_batch)
@@ -241,29 +214,46 @@ def run_batch(model, pos_batch, clocks_batch, wdl_batch):
   }
   logits = model(inputs, training=False).numpy()
 
-  cce = tf.keras.losses.CategoricalCrossentropy(from_logits=True, reduction='none')
-  losses = cce(wdl_np, logits).numpy()
+  m_pred = np.argmax(logits, axis=-1)
+  actual = np.argmax(wdl_np, axis=-1)
 
-  pred_idx = np.argmax(logits, axis=-1)
-  actual_idx = np.argmax(wdl_np, axis=-1)
+  m_confusion = np.zeros((3, 3), dtype=np.int64)
+  sf_confusion = np.zeros((3, 3), dtype=np.int64)
+  sf_preds = np.zeros(n, dtype=np.int64)
 
-  correct_top1 = int(np.sum(pred_idx == actual_idx))
+  for i in range(n):
+    board = struct_to_board(structs_batch[i])
+    sf_wdl_raw = pgn_data.engine_eval(board)
+    sf_probs = engine_wdl_to_stm_probs(sf_wdl_raw, board.turn)
+    sf_preds[i] = int(np.argmax(sf_probs))
 
-  not_draw = actual_idx != 1
-  correct_top1_no_draw = int(np.sum((pred_idx == actual_idx) & not_draw))
-  total_no_draw = int(np.sum(not_draw))
+  for p, a in zip(m_pred, actual):
+    m_confusion[p, a] += 1
+  for p, a in zip(sf_preds, actual):
+    sf_confusion[p, a] += 1
 
-  confusion = np.zeros((3, 3), dtype=np.int64)
-  for p, a in zip(pred_idx, actual_idx):
-    confusion[p, a] += 1
+  m_correct_mask = m_pred == actual
+  sf_wrong_mask = sf_preds != actual
+  m_correct_sf_wrong = int(np.sum(m_correct_mask & sf_wrong_mask))
+
+  if m_correct_sf_wrong > 0:
+    wdl_names = ["W", "D", "L"]
+    for i in range(n):
+      if m_correct_mask[i] and sf_wrong_mask[i]:
+        board = struct_to_board(structs_batch[i])
+        logger.info(
+          f"Model right, SF wrong: actual={wdl_names[actual[i]]}, "
+          f"model={wdl_names[m_pred[i]]}, sf={wdl_names[sf_preds[i]]}\n"
+          f"{board.fen()}"
+        )
 
   return {
     "count": n,
-    "correct_top1": correct_top1,
-    "correct_top1_no_draw": correct_top1_no_draw,
-    "total_no_draw": total_no_draw,
-    "loss_sum": float(np.sum(losses)),
-    "confusion": confusion,
+    "m_correct": int(np.sum(m_correct_mask)),
+    "m_confusion": m_confusion,
+    "sf_correct": int(np.sum(sf_preds == actual)),
+    "sf_confusion": sf_confusion,
+    "m_correct_sf_wrong": m_correct_sf_wrong,
   }
 
 
