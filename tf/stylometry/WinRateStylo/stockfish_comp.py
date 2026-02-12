@@ -108,7 +108,6 @@ def get_tfrecord_paths(paths: List[str]) -> List[str]:
   logger.info(f"Found {len(result)} tfrecord files")
   return result
 
-
 def process_tfrecords(
   tfrecord_paths: List[str],
   model_path: str = "",
@@ -200,7 +199,7 @@ def process_tfrecords(
 
     if m_total > 0:
       logger.info(
-        f"Running — n={m_total}, "
+        f"Running - n={m_total}, "
         f"model_acc={m_correct / m_total:.4f}, "
         f"model_acc_nd={m_correct_nd / m_total_nd:.4f if m_total_nd > 0 else 0:.4f}, "
         f"model_loss={m_loss_sum / m_total:.4f}, "
@@ -213,13 +212,13 @@ def process_tfrecords(
   logger.info(f"Total positions: {m_total}")
   if m_total > 0:
     logger.info(
-      f"Model — acc={m_correct / m_total:.4f}, "
+      f"Model - acc={m_correct / m_total:.4f}, "
       f"acc_nd={m_correct_nd / m_total_nd:.4f if m_total_nd > 0 else 0:.4f}, "
       f"loss={m_loss_sum / m_total:.4f}"
     )
     logger.info(f"Model confusion [pred][actual] (W/D/L):\n{m_confusion}")
     logger.info(
-      f"SF    — acc={sf_correct / sf_total:.4f}, "
+      f"SF    - acc={sf_correct / sf_total:.4f}, "
       f"acc_nd={sf_correct_nd / sf_total_nd:.4f if sf_total_nd > 0 else 0:.4f}, "
       f"loss={sf_loss_sum / sf_total:.4f}"
     )
