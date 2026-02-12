@@ -201,10 +201,10 @@ def process_tfrecords(
       logger.info(
         f"Running - n={m_total}, "
         f"model_acc={m_correct / m_total:.4f}, "
-        f"model_acc_nd={m_correct_nd / m_total_nd:.4f if m_total_nd > 0 else 0:.4f}, "
+        f"model_acc_nd={m_correct_nd / m_total_nd if m_total_nd > 0 else 0:.4f}, "
         f"model_loss={m_loss_sum / m_total:.4f}, "
         f"sf_acc={sf_correct / sf_total:.4f}, "
-        f"sf_acc_nd={sf_correct_nd / sf_total_nd:.4f if sf_total_nd > 0 else 0:.4f}, "
+        f"sf_acc_nd={sf_correct_nd / sf_total_nd if sf_total_nd > 0 else 0:.4f}, "
         f"sf_loss={sf_loss_sum / sf_total:.4f}"
       )
 
@@ -213,13 +213,13 @@ def process_tfrecords(
   if m_total > 0:
     logger.info(
       f"Model - acc={m_correct / m_total:.4f}, "
-      f"acc_nd={m_correct_nd / m_total_nd:.4f if m_total_nd > 0 else 0:.4f}, "
+      f"acc_nd={m_correct_nd / m_total_nd if m_total_nd > 0 else 0:.4f}, "
       f"loss={m_loss_sum / m_total:.4f}"
     )
     logger.info(f"Model confusion [pred][actual] (W/D/L):\n{m_confusion}")
     logger.info(
       f"SF    - acc={sf_correct / sf_total:.4f}, "
-      f"acc_nd={sf_correct_nd / sf_total_nd:.4f if sf_total_nd > 0 else 0:.4f}, "
+      f"acc_nd={sf_correct_nd / sf_total_nd if sf_total_nd > 0 else 0:.4f}, "
       f"loss={sf_loss_sum / sf_total:.4f}"
     )
     logger.info(f"SF confusion [pred][actual] (W/D/L):\n{sf_confusion}")
