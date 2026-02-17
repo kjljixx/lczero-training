@@ -243,7 +243,8 @@ def run_batch(model, pos_batch, clocks_batch, wdl_batch, structs_batch):
         board = struct_to_board(structs_batch[i])
         logger.info(
           f"Model right, SF wrong: actual={wdl_names[actual[i]]}, "
-          f"model={wdl_names[m_pred[i]]}, sf={wdl_names[sf_preds[i]]}\n"
+          f"model={wdl_names[m_pred[i]]}, sf={wdl_names[sf_preds[i]]}, "
+          f"logits={logits[i]}\n"
           f"{board.fen()}"
         )
 
