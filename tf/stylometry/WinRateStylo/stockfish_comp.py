@@ -278,12 +278,15 @@ def run_batch(model, pos_batch, clocks_batch, wdl_batch, board_batch, meta_batch
     for i in range(n):
       if m_correct_mask[i] and sf_wrong_mask[i]:
         white_name, black_name, white_elo, black_elo, stm = meta_batch[i]
+        stm_num_games = len(seq_batch[i][0])
+        opp_num_games = len(seq_batch[i][1])
         logger.info(
           f"Model right, SF wrong: actual={wdl_names[actual[i]]}, "
           f"model={wdl_names[m_pred[i]]}, sf={wdl_names[sf_preds[i]]}, "
           f"logits={logits[i]}\n"
           f"  White: {white_name} ({white_elo}), Black: {black_name} ({black_elo}), "
-          f"STM: {'Black' if stm == chess.BLACK else 'White'}\n"
+          f"STM: {'Black' if stm == chess.BLACK else 'White'}, "
+          f"STM games: {stm_num_games}, OPP games: {opp_num_games}\n"
           f"  {board_batch[i].fen()}"
         )
 
