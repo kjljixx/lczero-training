@@ -149,6 +149,10 @@ def process_pgns(
         stm_games = sample_games(stm_idx)
         opp_games = sample_games(opp_idx)
 
+        # Skip positions where either player has fewer than 4 games
+        if len(stm_games) < 4 or len(opp_games) < 4:
+          continue
+
         pos_batch.append(pos_planes.flatten())
         clocks_batch.append(pos_clocks)
         wdl_batch.append(wdl_label)
