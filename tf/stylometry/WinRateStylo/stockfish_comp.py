@@ -200,7 +200,7 @@ def process_tfrecords(
 
 def run_batch(model, pos_batch, clocks_batch, wdl_batch, structs_batch):
   pos_tensor = tf.cast(np.array(pos_batch), tf.float32)
-  clocks_tensor = tf.cast(np.array(clocks_batch), tf.float32)
+  clocks_tensor = tf.zeros((len(clocks_batch), 2), dtype=tf.float32)
   wdl_np = np.array(wdl_batch)
   n = len(pos_batch)
 
