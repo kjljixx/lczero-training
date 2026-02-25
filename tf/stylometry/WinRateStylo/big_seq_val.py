@@ -59,9 +59,6 @@ def process_pgns(
   total = 0
   m_correct = 0
   m_confusion = np.zeros((3, 3), dtype=np.int64)
-  sf_correct = 0
-  sf_confusion = np.zeros((3, 3), dtype=np.int64)
-  m_correct_sf_wrong = 0
   game_count = 0
 
   # Per-player sequence accumulation (player_idx -> list of game move sequences)
@@ -152,9 +149,6 @@ def process_pgns(
         total += results["count"]
         m_correct += results["m_correct"]
         m_confusion += results["m_confusion"]
-        sf_correct += results["sf_correct"]
-        sf_confusion += results["sf_confusion"]
-        m_correct_sf_wrong += results["m_correct_sf_wrong"]
         pos_batch = []
         clocks_batch = []
         wdl_batch = []
@@ -166,8 +160,6 @@ def process_pgns(
         logger.info(
           f"Running - games={game_count}, n={total}, "
           f"model_acc={m_correct / total:.4f}, "
-          f"sf_acc={sf_correct / total:.4f}, "
-          f"model_right_sf_wrong={m_correct_sf_wrong}"
         )
 
     pgn_file.close()
@@ -178,9 +170,6 @@ def process_pgns(
     total += results["count"]
     m_correct += results["m_correct"]
     m_confusion += results["m_confusion"]
-    sf_correct += results["sf_correct"]
-    sf_confusion += results["sf_confusion"]
-    m_correct_sf_wrong += results["m_correct_sf_wrong"]
 
   logger.info("=== Final Results ===")
   logger.info(f"Total games: {game_count}")
@@ -188,9 +177,6 @@ def process_pgns(
   if total > 0:
     logger.info(f"Model - correct={m_correct}/{total} ({m_correct / total:.4f})")
     logger.info(f"Model confusion [pred][actual] (W/D/L):\n{m_confusion}")
-    logger.info(f"SF    - correct={sf_correct}/{total} ({sf_correct / total:.4f})")
-    logger.info(f"SF confusion [pred][actual] (W/D/L):\n{sf_confusion}")
-    logger.info(f"Model correct & SF wrong: {m_correct_sf_wrong}")
 
 
 def build_seq_tensor(seq_batch_side, n):
