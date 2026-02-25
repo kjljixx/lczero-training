@@ -216,6 +216,7 @@ def run_batch(model, pos_batch, clocks_batch, wdl_batch, board_batch, meta_batch
     op, om = process_seq_to_planes(opp_seq_np[i])
     opp_planes[i] = op
     opp_masks[i] = om
+    clocks_tensor[i] = np.array([600, 600])
 
   inputs = {
     'input1': tf.constant(stm_planes),
