@@ -24,6 +24,8 @@ import random
 from typing import List
 import logging
 
+MAX_GAMES = 100
+
 logger = logging.getLogger(__name__)
 
 def process_seq_to_planes(seq_np):
@@ -123,7 +125,7 @@ def process_pgns(
         stm_color = chess.BLACK if stm_color_bit else chess.WHITE
 
         # Sample up to 5 game sequences per player
-        def sample_games(player_idx, max_games=5000):
+        def sample_games(player_idx, max_games=MAX_GAMES):
           if player_idx in player_sequences and len(player_sequences[player_idx]) > 0:
             n_avail = min(max_games, len(player_sequences[player_idx]))
             return [g for g in random.sample(player_sequences[player_idx], n_avail)]
@@ -193,7 +195,7 @@ def process_pgns(
 
 def build_seq_tensor(seq_batch_side, n):
   """Build (n, 5, MAX_MOVES, 5) uint64 array from a list of game-move-lists."""
-  arr = np.zeros((n, 100, MAX_MOVES, 5), dtype=np.uint64)
+  arr = np.zeros((n, MAX_GAMES, MAX_MOVES, 5), dtype=np.uint64)
   for i, games in enumerate(seq_batch_side):
     for g_idx, game_moves in enumerate(games):
       num_moves = min(len(game_moves), MAX_MOVES)
@@ -216,10 +218,10 @@ def run_batch(model, pos_batch, clocks_batch, wdl_batch, board_batch, meta_batch
   opp_seq_np = build_seq_tensor(opp_games_list, n)
 
   # Convert uint64 structs to planes + masks
-  stm_planes = np.zeros((n, 5, MAX_MOVES, SEQ_PLANES, 8, 8), dtype=np.int8)
-  stm_masks = np.zeros((n, 5, MAX_MOVES), dtype=np.int8)
-  opp_planes = np.zeros((n, 5, MAX_MOVES, SEQ_PLANES, 8, 8), dtype=np.int8)
-  opp_masks = np.zeros((n, 5, MAX_MOVES), dtype=np.int8)
+  stm_planes = np.zeros((n, MAX_GAMES, MAX_MOVES, SEQ_PLANES, 8, 8), dtype=np.int8)
+  stm_masks = np.zeros((n, MAX_GAMES, MAX_MOVES), dtype=np.int8)
+  opp_planes = np.zeros((n, MAX_GAMES, MAX_MOVES, SEQ_PLANES, 8, 8), dtype=np.int8)
+  opp_masks = np.zeros((n, MAX_GAMES, MAX_MOVES), dtype=np.int8)
 
   for i in range(n):
     sp, sm = process_seq_to_planes(stm_seq_np[i])
