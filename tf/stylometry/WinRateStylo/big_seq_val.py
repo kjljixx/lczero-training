@@ -192,7 +192,7 @@ def build_seq_tensor(seq_batch_side, n):
 
 def run_batch(model, pos_batch, clocks_batch, wdl_batch, board_batch, meta_batch, seq_batch):
   pos_tensor = tf.cast(np.array(pos_batch), tf.float32)
-  clocks_tensor = np.zeros((len(clocks_batch), 2), dtype=tf.float32)
+  clocks_tensor = np.zeros((len(clocks_batch), 2), dtype=np.float32)
   wdl_np = np.array(wdl_batch)
   n = len(pos_batch)
 
