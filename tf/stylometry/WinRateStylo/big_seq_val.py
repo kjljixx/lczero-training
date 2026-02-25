@@ -145,6 +145,7 @@ def process_pgns(
       game_count += 1
 
       if len(pos_batch) >= batch_size:
+        print(np.average(clocks_batch, axis=0))
         results = run_batch(model, pos_batch, clocks_batch, wdl_batch, board_batch, meta_batch, seq_batch)
         total += results["count"]
         m_correct += results["m_correct"]
