@@ -59,6 +59,7 @@ def process_pgns(
   total = 0
   m_correct = 0
   m_confusion = np.zeros((3, 3), dtype=np.int64)
+  seq_size = 0
   elo_correct = 0
   game_count = 0
 
@@ -142,6 +143,7 @@ def process_pgns(
         board_batch.append(replay_boards[pos_i] if pos_i < len(replay_boards) else chess.Board())
         meta_batch.append((white_name, black_name, white_elo, black_elo, stm_color))
         seq_batch.append((stm_games, opp_games))
+        seq_size += len(stm_games) + len(opp_games)
 
       game_count += 1
 
@@ -162,6 +164,7 @@ def process_pgns(
         logger.info(
           f"Running - games={game_count}, n={total}, "
           f"model_acc={m_correct / total:.4f}, "
+          f"seq_size={seq_size/total if total > 0 else 0}, "
           f"elo_acc={elo_correct / total:.4f}"
         )
 
