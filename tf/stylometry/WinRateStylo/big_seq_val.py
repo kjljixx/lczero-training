@@ -164,7 +164,7 @@ def process_pgns(
         logger.info(
           f"Running - games={game_count}, n={total}, "
           f"model_acc={m_correct / total:.4f}, "
-          f"seq_size={seq_size/total if total > 0 else 0}, "
+          f"seq_size={seq_size/(2*total) if total > 0 else 0}, "
           f"elo_acc={elo_correct / total:.4f}"
         )
 
