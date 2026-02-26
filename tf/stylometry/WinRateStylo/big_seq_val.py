@@ -28,6 +28,23 @@ MAX_GAMES = 100
 
 logger = logging.getLogger(__name__)
 
+def engine_wdl_to_stm_probs(wdl_result, board_turn):
+  if isinstance(wdl_result, chess.engine.Wdl):
+    w = wdl_result.wins / 1000.0
+    d = wdl_result.draws / 1000.0
+    l = wdl_result.losses / 1000.0
+  else:
+    w, d, l = float(wdl_result[0]), float(wdl_result[1]), float(wdl_result[2])
+    total = w + d + l
+    if total > 0:
+      w, d, l = w / total, d / total, l / total
+    else:
+      w, d, l = 0.0, 1.0, 0.0
+  if board_turn == chess.BLACK:
+    w, l = l, w
+  probs = np.array([w, d, l])
+  return np.clip(probs / np.sum(probs), 1e-7, 1.0 - 1e-7)
+
 def process_seq_to_planes(seq_np):
   """Convert a (5, max_moves, 5) uint64 sequence array into planes and masks."""
   num_games = seq_np.shape[0]
@@ -61,6 +78,7 @@ def process_pgns(
   m_confusion = np.zeros((3, 3), dtype=np.int64)
   seq_size = 0
   elo_correct = 0
+  sf_correct = 0
   game_count = 0
 
   # Per-player sequence accumulation (player_idx -> list of game move sequences)
@@ -153,6 +171,7 @@ def process_pgns(
         m_correct += results["m_correct"]
         m_confusion += results["m_confusion"]
         elo_correct += results["elo_correct"]
+        sf_correct += results["sf_correct"]
         pos_batch = []
         clocks_batch = []
         wdl_batch = []
@@ -165,7 +184,8 @@ def process_pgns(
           f"Running - games={game_count}, n={total}, "
           f"model_acc={m_correct / total:.4f}, "
           f"seq_size={seq_size/(2*total) if total > 0 else 0}, "
-          f"elo_acc={elo_correct / total:.4f}"
+          f"elo_acc={elo_correct / total:.4f}, "
+          f"sf_acc={sf_correct / total:.4f}"
         )
 
     pgn_file.close()
@@ -177,6 +197,7 @@ def process_pgns(
     m_correct += results["m_correct"]
     m_confusion += results["m_confusion"]
     elo_correct += results["elo_correct"]
+    sf_correct += results["sf_correct"]
 
   logger.info("=== Final Results ===")
   logger.info(f"Total games: {game_count}")
@@ -259,11 +280,19 @@ def run_batch(model, pos_batch, clocks_batch, wdl_batch, board_batch, meta_batch
     elif stm_color == chess.BLACK:
       elo_correct += 1 if (a == 0 and expected == 2) or (a == 2 and expected == 0) else 0
 
+  sf_preds = np.zeros(n, dtype=np.int64)
+
+  for i in range(n):
+    sf_wdl_raw = pgn_data.engine_eval(board_batch[i])
+    sf_probs = engine_wdl_to_stm_probs(sf_wdl_raw, board_batch[i].turn)
+    sf_preds[i] = int(np.argmax(sf_probs))
+
   return {
     "count": n,
     "m_correct": int(np.sum(m_correct_mask)),
     "m_confusion": m_confusion,
     "elo_correct": elo_correct,
+    "sf_correct": int(np.sum(sf_preds == actual)),
   }
 
 
@@ -276,11 +305,16 @@ if __name__ == "__main__":
   parser = argparse.ArgumentParser(description="Evaluate model")
   parser.add_argument("inputs", nargs="+", help="Input PGN file(s) or folder(s)")
   parser.add_argument("model", help="Path to the trained model")
+  parser.add_argument("--engine-path", type=str, default="./stylometry/WinRateStylo/engines/stockfish/stockfish-ubuntu-x86-64-avx2")
   parser.add_argument("--skip-rate", type=float, default=0.0, help="Probability of skipping each position")
   parser.add_argument("--batch-size", type=int, default=32)
   parser.add_argument("--min-moves", type=int, default=3, help="Skip positions before this move number")
 
   args = parser.parse_args()
+
+  pgn_data.DO_ENGINE_EVAL = True
+  pgn_data.engine = chess.engine.SimpleEngine.popen_uci(args.engine_path)
+  pgn_data.engine.configure({"UCI_ShowWDL": True})
 
   pgn_files = get_pgns(args.inputs)
 
