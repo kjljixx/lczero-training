@@ -59,6 +59,7 @@ def process_pgns(
   total = 0
   m_correct = 0
   m_confusion = np.zeros((3, 3), dtype=np.int64)
+  elo_correct = 0
   game_count = 0
 
   # Per-player sequence accumulation (player_idx -> list of game move sequences)
@@ -149,6 +150,7 @@ def process_pgns(
         total += results["count"]
         m_correct += results["m_correct"]
         m_confusion += results["m_confusion"]
+        elo_correct += results["elo_correct"]
         pos_batch = []
         clocks_batch = []
         wdl_batch = []
@@ -160,6 +162,7 @@ def process_pgns(
         logger.info(
           f"Running - games={game_count}, n={total}, "
           f"model_acc={m_correct / total:.4f}, "
+          f"elo_acc={elo_correct / total:.4f}"
         )
 
     pgn_file.close()
@@ -170,6 +173,7 @@ def process_pgns(
     total += results["count"]
     m_correct += results["m_correct"]
     m_confusion += results["m_confusion"]
+    elo_correct += results["elo_correct"]
 
   logger.info("=== Final Results ===")
   logger.info(f"Total games: {game_count}")
@@ -180,6 +184,7 @@ def process_pgns(
 
 
 def build_seq_tensor(seq_batch_side, n):
+
   """Build (n, 5, MAX_MOVES, 5) uint64 array from a list of game-move-lists."""
   arr = np.zeros((n, MAX_GAMES, MAX_MOVES, 5), dtype=np.uint64)
   for i, games in enumerate(seq_batch_side):
@@ -238,10 +243,24 @@ def run_batch(model, pos_batch, clocks_batch, wdl_batch, board_batch, meta_batch
 
   m_correct_mask = m_pred == actual
 
+  elo_correct = 0
+  for p, a in zip(meta_batch, actual):
+    white_name, black_name, white_elo, black_elo, stm_color = p
+    
+    if white_elo > black_elo:
+      expected = 0
+    else:
+      expected = 2
+    if stm_color == chess.WHITE:
+      elo_correct += 1 if (a == 0 and expected == 0) or (a == 2 and expected == 2) else 0
+    elif a == 2 and stm_color == chess.BLACK:
+      elo_correct += 1 if (a == 0 and expected == 2) or (a == 2 and expected == 0) else 0
+
   return {
     "count": n,
     "m_correct": int(np.sum(m_correct_mask)),
     "m_confusion": m_confusion,
+    "elo_correct": elo_correct,
   }
 
 
