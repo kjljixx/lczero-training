@@ -256,7 +256,7 @@ def run_batch(model, pos_batch, clocks_batch, wdl_batch, board_batch, meta_batch
       expected = 2
     if stm_color == chess.WHITE:
       elo_correct += 1 if (a == 0 and expected == 0) or (a == 2 and expected == 2) else 0
-    elif a == 2 and stm_color == chess.BLACK:
+    elif stm_color == chess.BLACK:
       elo_correct += 1 if (a == 0 and expected == 2) or (a == 2 and expected == 0) else 0
 
   return {
