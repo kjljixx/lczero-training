@@ -49,3 +49,8 @@ Engine predicted WDL dist matrix (not accounting for skipping, [engine_pred][act
 run2026-01-12: 0.5834
 run2026-01-22: 0.6521
 no-stylo: 0.6464
+
+stylo:
+2026-02-26 02:56:01,498 - __main__ - INFO - Running - games=33000, n=50205, model_acc=0.6096, seq_size=34.868011154267506, elo_acc=0.6580
+no_stylo:
+2026-02-26 00:21:36,923 - __main__ - INFO - Running - games=33000, n=50205, model_acc=0.5978, seq_size=34.868011154267506, elo_acc=0.6580
