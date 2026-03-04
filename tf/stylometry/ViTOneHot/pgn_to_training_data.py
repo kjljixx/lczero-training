@@ -322,7 +322,7 @@ def serialize_sequence(sequence):
       all_game_moves[:num_moves, :] = np.array(games[:num_moves], dtype=np.uint64)
     return all_game_moves
 
-  stm_padded = pad_and_flatten(sequence[0])
+  stm_padded = pad_and_flatten(sequence[0][0])
 
   feature = {
     'seq': tf.train.Feature(bytes_list=tf.train.BytesList(value=[stm_padded.tobytes()])),
