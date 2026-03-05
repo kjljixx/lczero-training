@@ -85,7 +85,8 @@ def parse_seq_example(serialized_example):
   }
   example = tf.io.parse_single_example(serialized_example, feature_description)
   # seq is stored as (MAX_MOVES, 5) uint64 flattened to bytes
-  seq = tf.io.decode_raw(example['seq'], tf.uint64)
+  # decode_raw doesn't support uint64, so decode as int64 and reinterpret later
+  seq = tf.io.decode_raw(example['seq'], tf.int64)
   seq = tf.reshape(seq, [MAX_MOVES, 5])
   return seq, example['elo'][0]
 
@@ -104,7 +105,7 @@ def create_seq_dataset(
         for raw_record in raw_ds:
           try:
             seq_tensor, elo_tensor = parse_seq_example(raw_record)
-            seq_np = seq_tensor.numpy().astype(np.uint64)   # (MAX_MOVES, 5)
+            seq_np = seq_tensor.numpy().view(np.uint64)   # (MAX_MOVES, 5)
             elo_val = float(elo_tensor.numpy())
 
             planes = np.zeros((MAX_MOVES, SEQ_PLANES, 8, 8), dtype=np.float32)
