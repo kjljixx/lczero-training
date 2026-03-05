@@ -95,7 +95,8 @@ def create_seq_dataset(
   shard_paths: List[str],
   batch_size: int = 32,
   shuffle: bool = True,
-  repeat: bool = True
+  repeat: bool = True,
+  skip_rate: float = 0.0
 ) -> tf.data.Dataset:
   """Dataset that yields (inputs_dict, elo) from seq_shards."""
   def generator():
@@ -225,7 +226,7 @@ def train_model(
   print(f"Train shards: {len(train_shards)}, Val shards: {len(val_shards)}")
 
   train_dataset = create_seq_dataset(train_shards, batch_size, shuffle=True, repeat=True)
-  val_dataset = create_seq_dataset(val_shards, batch_size, shuffle=False, repeat=False)
+  val_dataset = create_seq_dataset(val_shards, batch_size, shuffle=False, repeat=False, skip_rate=0.95)
 
   print("Creating model...")
 
@@ -315,7 +316,7 @@ if __name__ == "__main__":
   parser.add_argument("--epochs", type=int, default=500)
   parser.add_argument("--batch-size", type=int, default=32)
   parser.add_argument("--learning-rate", type=float, default=1e-4)
-  parser.add_argument("--val-split", type=float, default=0.05)
+  parser.add_argument("--val-split", type=float, default=0.003)
   parser.add_argument("--hidden-dim", type=int, default=256)
   parser.add_argument("--num-layers", type=int, default=6)
   parser.add_argument("--num-heads", type=int, default=4)
