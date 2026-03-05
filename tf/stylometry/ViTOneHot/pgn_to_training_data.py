@@ -261,6 +261,7 @@ def process_pgns(
   curr_shard_idx = 0
 
   curr_sequences = []
+  all_elos: List[float] = []
 
   if not os.path.exists(output_prefix):
     os.mkdir(output_prefix)
@@ -291,6 +292,8 @@ def process_pgns(
       black_elo = int(game.headers.get("BlackElo", "0"))
       curr_sequences.append([game_data[0][0], white_elo])
       curr_sequences.append([game_data[0][1], black_elo])
+      all_elos.append(float(white_elo))
+      all_elos.append(float(black_elo))
 
       if len(curr_sequences) > SHARD_SIZE:
         save_shard(f"{output_prefix}/seq_shards/{curr_shard_idx:04d}.tfrecord", curr_sequences, serialize_sequence)
@@ -301,11 +304,36 @@ def process_pgns(
       if game_count % 100 == 0:
         logger.info(f"Processed: {game_count} games in PGN")
         logger.info(f"In Memory: {len(curr_sequences)} sequences")
+        if all_elos:
+          elo_arr = np.array(all_elos, dtype=np.float64)
+          mean_elo = elo_arr.mean()
+          std_elo = elo_arr.std()
+          min_elo = elo_arr.min()
+          max_elo = elo_arr.max()
+          baseline_mse = float(np.mean((elo_arr - mean_elo) ** 2))
+          baseline_mae = float(np.mean(np.abs(elo_arr - mean_elo)))
+          logger.info(f"  Sequences : {len(elo_arr):,}  Mean elo  : {mean_elo:.1f}  Std elo   : {std_elo:.1f}  Min elo   : {min_elo:.0f}  Max elo   : {max_elo:.0f}  Baseline MSE: {baseline_mse:.1f}  Baseline MAE: {baseline_mae:.1f}")
+
     
     logger.info(f"Finished: {pgn_file_path}")
     logger.info(f"File Idx: {pgn_file_idx}")
     logger.info(f"Processed: {game_count} games in PGN")
     logger.info(f"In Memory: {len(curr_sequences)} sequences")
+
+  if curr_sequences:
+    save_shard(f"{output_prefix}/seq_shards/{curr_shard_idx:04d}.tfrecord", curr_sequences, serialize_sequence)
+    curr_shard_idx += 1
+    curr_sequences = []
+
+  if all_elos:
+    elo_arr = np.array(all_elos, dtype=np.float64)
+    mean_elo = elo_arr.mean()
+    std_elo = elo_arr.std()
+    min_elo = elo_arr.min()
+    max_elo = elo_arr.max()
+    baseline_mse = float(np.mean((elo_arr - mean_elo) ** 2))
+    baseline_mae = float(np.mean(np.abs(elo_arr - mean_elo)))
+    logger.info(f"  Sequences : {len(elo_arr):,}  Mean elo  : {mean_elo:.1f}  Std elo   : {std_elo:.1f}  Min elo   : {min_elo:.0f}  Max elo   : {max_elo:.0f}  Baseline MSE: {baseline_mse:.1f}  Baseline MAE: {baseline_mae:.1f}")
 
 def save_shard(shard_path, items, serialize_function):
   with tf.io.TFRecordWriter(shard_path) as writer:
