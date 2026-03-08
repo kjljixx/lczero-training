@@ -150,6 +150,7 @@ def process_pgns(
         opp_games = sample_games(opp_idx)
 
         # Skip positions where either player has fewer than 4 games
+        print(stm_games, opp_games)
         if len(stm_games) < 20 or len(opp_games) < 20:
           continue
 
