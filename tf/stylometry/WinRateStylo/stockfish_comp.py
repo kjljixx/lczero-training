@@ -140,7 +140,7 @@ def process_pgns(
         stm_color = chess.BLACK if stm_color_bit else chess.WHITE
 
         # Sample up to 5 game sequences per player
-        def sample_games(player_idx, max_games=5):
+        def sample_games(player_idx, max_games=20):
           if player_idx in player_sequences and len(player_sequences[player_idx]) > 0:
             n_avail = min(max_games, len(player_sequences[player_idx]))
             return [g for g in random.sample(player_sequences[player_idx], n_avail)]
@@ -150,7 +150,6 @@ def process_pgns(
         opp_games = sample_games(opp_idx)
 
         # Skip positions where either player has fewer than 4 games
-        print(len(stm_games), len(opp_games))
         if len(stm_games) < 20 or len(opp_games) < 20:
           continue
 
