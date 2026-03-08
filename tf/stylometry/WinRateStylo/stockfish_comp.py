@@ -150,7 +150,6 @@ def process_pgns(
         opp_games = sample_games(opp_idx)
 
         # Skip positions where either player has fewer than 4 games
-        print(stm_games, opp_games)
         if len(stm_games) < 20 or len(opp_games) < 20:
           continue
 
@@ -315,7 +314,7 @@ if __name__ == "__main__":
   parser.add_argument("inputs", nargs="+", help="Input PGN file(s) or folder(s)")
   parser.add_argument("model", help="Path to the trained model")
   parser.add_argument("--engine-path", type=str, default="./stylometry/WinRateStylo/engines/stockfish/stockfish-ubuntu-x86-64-avx2")
-  parser.add_argument("--skip-rate", type=float, default=0.0, help="Probability of skipping each position")
+  parser.add_argument("--skip-rate", type=float, default=0.95, help="Probability of skipping each position")
   parser.add_argument("--batch-size", type=int, default=32)
   parser.add_argument("--min-moves", type=int, default=3, help="Skip positions before this move number")
 
