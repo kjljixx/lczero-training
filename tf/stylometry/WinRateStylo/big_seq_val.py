@@ -11,6 +11,7 @@ from stylometry.WinRateStylo.train_wr_stylometry import (
   SEQ_PLANES,
   POS_PLANES,
 )
+from stylometry.ViTOneHot.train_stylometry import EloPredictor
 import stylometry.WinRateStylo.pgn_to_training_data as pgn_data
 from stylometry.WinRateStylo.pgn_to_training_data import (
   get_pgns,
@@ -24,7 +25,7 @@ import random
 from typing import List
 import logging
 
-MAX_GAMES = 100
+MAX_GAMES = 1
 
 logger = logging.getLogger(__name__)
 
@@ -73,11 +74,17 @@ def process_pgns(
   )
   player_mapper = PlayerIndexMapper()
 
+  elo_model = keras.saving.load_model(
+    "./stylometry/ViTOneHot/models/run2026-03-02-lr-0.00005/checkpoint_epoch_36.keras",
+    custom_objects={"EloPredictor": EloPredictor}
+  )
+
   total = 0
   m_correct = 0
   m_confusion = np.zeros((3, 3), dtype=np.int64)
   seq_size = 0
   elo_correct = 0
+  elo_model_correct = 0
   sf_correct = 0
   game_count = 0
 
@@ -166,7 +173,7 @@ def process_pgns(
       game_count += 1
 
       if len(pos_batch) >= batch_size:
-        results = run_batch(model, pos_batch, clocks_batch, wdl_batch, board_batch, meta_batch, seq_batch)
+        results = run_batch(model, elo_model, pos_batch, clocks_batch, wdl_batch, board_batch, meta_batch, seq_batch)
         total += results["count"]
         m_correct += results["m_correct"]
         m_confusion += results["m_confusion"]
@@ -185,6 +192,7 @@ def process_pgns(
           f"model_acc={m_correct / total:.4f}, "
           f"seq_size={seq_size/(2*total) if total > 0 else 0}, "
           f"elo_acc={elo_correct / total:.4f}, "
+          f"elo_model_acc={elo_model_correct / total:.4f}, "
           f"sf_acc={sf_correct / total:.4f}"
         )
 
@@ -192,11 +200,12 @@ def process_pgns(
 
   # flush remaining
   if len(pos_batch) > 0:
-    results = run_batch(model, pos_batch, clocks_batch, wdl_batch, board_batch, meta_batch, seq_batch)
+    results = run_batch(model, elo_model, pos_batch, clocks_batch, wdl_batch, board_batch, meta_batch, seq_batch)
     total += results["count"]
     m_correct += results["m_correct"]
     m_confusion += results["m_confusion"]
     elo_correct += results["elo_correct"]
+    elo_model_correct += results["elo_model_correct"]
     sf_correct += results["sf_correct"]
 
   logger.info("=== Final Results ===")
@@ -205,6 +214,7 @@ def process_pgns(
   if total > 0:
     logger.info(f"Model - correct={m_correct}/{total} ({m_correct / total:.4f})")
     logger.info(f"Model confusion [pred][actual] (W/D/L):\n{m_confusion}")
+    logger.info(f" Elo Model - correct={elo_model_correct}/{total} ({elo_model_correct / total:.4f})")
 
 
 def build_seq_tensor(seq_batch_side, n):
@@ -219,7 +229,7 @@ def build_seq_tensor(seq_batch_side, n):
   return arr
 
 
-def run_batch(model, pos_batch, clocks_batch, wdl_batch, board_batch, meta_batch, seq_batch):
+def run_batch(model, elo_model, pos_batch, clocks_batch, wdl_batch, board_batch, meta_batch, seq_batch):
   pos_tensor = tf.cast(np.array(pos_batch), tf.float32)
   clocks_tensor = np.zeros((len(clocks_batch), 2), dtype=np.float32)
   wdl_np = np.array(wdl_batch)
@@ -267,6 +277,38 @@ def run_batch(model, pos_batch, clocks_batch, wdl_batch, board_batch, meta_batch
 
   m_correct_mask = m_pred == actual
 
+    # Use elo_model to predict elos for both players based on their sequences
+  stm_elos = []
+  opp_elos = []
+  
+  # Predict elos for STM (side to move) players
+  stm_inputs = {
+    'seq': tf.cast(stm_planes[:,0,:,:,:,:], tf.float32),  # Use first game of each player
+    'mask': tf.cast(stm_masks[:,0,:], tf.float32)
+  }
+  stm_elo_preds = elo_model(stm_inputs, training=False).numpy()
+  
+  # Predict elos for opponent players
+  opp_inputs = {
+    'seq': tf.cast(opp_planes[:,0,:,:,:,:], tf.float32),  # Use first game of each player
+    'mask': tf.cast(opp_masks[:,0,:], tf.float32)
+  }
+  opp_elo_preds = elo_model(opp_inputs, training=False).numpy()
+
+  elo_model_correct = 0
+  for p, a in zip(zip(stm_elo_preds, opp_elo_preds), actual):
+    stm_elo, opp_elo = p
+    if stm_elo > opp_elo:
+      expected = 0
+    else:
+      expected = 2
+    
+    if a == expected:
+      elo_model_correct += 1
+    else:
+      pass
+
+
   elo_correct = 0
   for p, a in zip(meta_batch, actual):
     white_name, black_name, white_elo, black_elo, stm_color = p
@@ -275,6 +317,7 @@ def run_batch(model, pos_batch, clocks_batch, wdl_batch, board_batch, meta_batch
       expected = 0
     else:
       expected = 2
+
     if stm_color == chess.WHITE:
       elo_correct += 1 if (a == 0 and expected == 0) or (a == 2 and expected == 2) else 0
     elif stm_color == chess.BLACK:
@@ -292,6 +335,7 @@ def run_batch(model, pos_batch, clocks_batch, wdl_batch, board_batch, meta_batch
     "m_correct": int(np.sum(m_correct_mask)),
     "m_confusion": m_confusion,
     "elo_correct": elo_correct,
+    "elo_model_correct": elo_model_correct,
     "sf_correct": int(np.sum(sf_preds == actual)),
   }
 
