@@ -290,8 +290,8 @@ def run_batch(model, elo_model, pos_batch, clocks_batch, wdl_batch, board_batch,
   opp_game_preds = elo_model({'seq': opp_seq_flat, 'mask': opp_mask_flat}, training=False).numpy()
 
   # Convert to (n, MAX_GAMES) scalar predictions.
-  stm_game_preds = np.squeeze(stm_game_preds, axis=-1).reshape(n, MAX_GAMES)
-  opp_game_preds = np.squeeze(opp_game_preds, axis=-1).reshape(n, MAX_GAMES)
+  stm_game_preds = stm_game_preds.reshape(n, MAX_GAMES)
+  opp_game_preds = opp_game_preds.reshape(n, MAX_GAMES)
 
   # A game is valid when it has at least one move in its sequence mask.
   stm_game_valid = (np.sum(stm_masks, axis=-1) > 0).astype(np.float32)
