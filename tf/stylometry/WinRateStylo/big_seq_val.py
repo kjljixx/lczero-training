@@ -178,6 +178,7 @@ def process_pgns(
         m_correct += results["m_correct"]
         m_confusion += results["m_confusion"]
         elo_correct += results["elo_correct"]
+        elo_model_correct += results["elo_model_correct"]
         sf_correct += results["sf_correct"]
         pos_batch = []
         clocks_batch = []
@@ -302,8 +303,6 @@ def run_batch(model, elo_model, pos_batch, clocks_batch, wdl_batch, board_batch,
       expected = 0
     else:
       expected = 2
-
-    print(expected, a)
     
     if a == expected:
       elo_model_correct += 1
