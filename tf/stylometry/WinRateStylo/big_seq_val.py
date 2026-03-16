@@ -25,7 +25,7 @@ import random
 from typing import List
 import logging
 
-MAX_GAMES = 5
+MAX_GAMES = 20
 
 logger = logging.getLogger(__name__)
 
