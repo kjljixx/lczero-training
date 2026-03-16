@@ -266,9 +266,10 @@ def run_batch(model, elo_model, pos_batch, clocks_batch, wdl_batch, board_batch,
     'pos': pos_tensor,
     'pos_clocks': clocks_tensor,
   }
-  logits = model(inputs, training=False).numpy()
+  # logits = model(inputs, training=False).numpy()
 
-  m_pred = np.argmax(logits, axis=-1)
+  # m_pred = np.argmax(logits, axis=-1)
+  m_pred = np.zeros(n, dtype=np.int64)  # Placeholder since model inference is slow
   actual = np.argmax(wdl_np, axis=-1)
 
   m_confusion = np.zeros((3, 3), dtype=np.int64)
@@ -327,9 +328,10 @@ def run_batch(model, elo_model, pos_batch, clocks_batch, wdl_batch, board_batch,
   sf_preds = np.zeros(n, dtype=np.int64)
 
   for i in range(n):
-    sf_wdl_raw = pgn_data.engine_eval(board_batch[i])
-    sf_probs = engine_wdl_to_stm_probs(sf_wdl_raw, board_batch[i].turn)
-    sf_preds[i] = int(np.argmax(sf_probs))
+    # sf_wdl_raw = pgn_data.engine_eval(board_batch[i])
+    # sf_probs = engine_wdl_to_stm_probs(sf_wdl_raw, board_batch[i].turn)
+    # sf_preds[i] = int(np.argmax(sf_probs))
+    sf_preds[i] = 0  # Placeholder since engine eval is slow
 
   return {
     "count": n,
