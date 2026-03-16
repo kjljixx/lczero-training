@@ -25,7 +25,7 @@ import random
 from typing import List
 import logging
 
-MAX_GAMES = 1
+MAX_GAMES = 5
 
 logger = logging.getLogger(__name__)
 
@@ -159,7 +159,7 @@ def process_pgns(
         opp_games = sample_games(opp_idx)
 
         # Skip positions where either player has fewer than 4 games
-        if len(stm_games) < 1 or len(opp_games) < 1:
+        if len(stm_games) < MAX_GAMES or len(opp_games) < MAX_GAMES:
           continue
 
         pos_batch.append(pos_planes.flatten())
@@ -279,23 +279,29 @@ def run_batch(model, elo_model, pos_batch, clocks_batch, wdl_batch, board_batch,
 
   m_correct_mask = m_pred == actual
 
-    # Use elo_model to predict elos for both players based on their sequences
-  stm_elos = []
-  opp_elos = []
-  
-  # Predict elos for STM (side to move) players
-  stm_inputs = {
-    'seq': tf.cast(stm_planes[:,0,:,:,:,:], tf.float32),  # Use first game of each player
-    'mask': tf.cast(stm_masks[:,0,:], tf.float32)
-  }
-  stm_elo_preds = elo_model(stm_inputs, training=False).numpy()
-  
-  # Predict elos for opponent players
-  opp_inputs = {
-    'seq': tf.cast(opp_planes[:,0,:,:,:,:], tf.float32),  # Use first game of each player
-    'mask': tf.cast(opp_masks[:,0,:], tf.float32)
-  }
-  opp_elo_preds = elo_model(opp_inputs, training=False).numpy()
+  # Predict Elo per sampled game and average per-player predictions.
+  # Shapes: (n * MAX_GAMES, MAX_MOVES, SEQ_PLANES, 8, 8) and (n * MAX_GAMES, MAX_MOVES)
+  stm_seq_flat = tf.cast(stm_planes.reshape(-1, MAX_MOVES, SEQ_PLANES, 8, 8), tf.float32)
+  stm_mask_flat = tf.cast(stm_masks.reshape(-1, MAX_MOVES), tf.float32)
+  opp_seq_flat = tf.cast(opp_planes.reshape(-1, MAX_MOVES, SEQ_PLANES, 8, 8), tf.float32)
+  opp_mask_flat = tf.cast(opp_masks.reshape(-1, MAX_MOVES), tf.float32)
+
+  stm_game_preds = elo_model({'seq': stm_seq_flat, 'mask': stm_mask_flat}, training=False).numpy()
+  opp_game_preds = elo_model({'seq': opp_seq_flat, 'mask': opp_mask_flat}, training=False).numpy()
+
+  # Convert to (n, MAX_GAMES) scalar predictions.
+  stm_game_preds = np.squeeze(stm_game_preds, axis=-1).reshape(n, MAX_GAMES)
+  opp_game_preds = np.squeeze(opp_game_preds, axis=-1).reshape(n, MAX_GAMES)
+
+  # A game is valid when it has at least one move in its sequence mask.
+  stm_game_valid = (np.sum(stm_masks, axis=-1) > 0).astype(np.float32)
+  opp_game_valid = (np.sum(opp_masks, axis=-1) > 0).astype(np.float32)
+
+  stm_valid_counts = np.maximum(np.sum(stm_game_valid, axis=1), 1.0)
+  opp_valid_counts = np.maximum(np.sum(opp_game_valid, axis=1), 1.0)
+
+  stm_elo_preds = np.sum(stm_game_preds * stm_game_valid, axis=1) / stm_valid_counts
+  opp_elo_preds = np.sum(opp_game_preds * opp_game_valid, axis=1) / opp_valid_counts
 
   elo_model_correct = 0
   for p, a in zip(zip(stm_elo_preds, opp_elo_preds), actual):
