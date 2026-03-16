@@ -295,10 +295,6 @@ def run_batch(model, elo_model, pos_batch, clocks_batch, wdl_batch, board_batch,
   }
   opp_elo_preds = elo_model(opp_inputs, training=False).numpy()
 
-  print(stm_elo_preds)
-  print(opp_elo_preds)
-
-
   elo_model_correct = 0
   for p, a in zip(zip(stm_elo_preds, opp_elo_preds), actual):
     stm_elo, opp_elo = p
@@ -306,6 +302,8 @@ def run_batch(model, elo_model, pos_batch, clocks_batch, wdl_batch, board_batch,
       expected = 0
     else:
       expected = 2
+
+    print(expected, a)
     
     if a == expected:
       elo_model_correct += 1
