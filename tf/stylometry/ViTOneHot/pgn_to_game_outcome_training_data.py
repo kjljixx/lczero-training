@@ -318,6 +318,7 @@ def process_pgns(
       
       white = player_mapper.get_index(game.headers["White"])
       black = player_mapper.get_index(game.headers["Black"])
+      result = game.headers.get("Result", "*")
       rand = random.random()
       if (seq_counts.get(white, 0) < 5 or seq_counts.get(black, 0) < 5) and rand < 0.8:
         if white in curr_sequences:
@@ -331,7 +332,7 @@ def process_pgns(
         seq_counts[white] = seq_counts.get(white, 0) + 1
         seq_counts[black] = seq_counts.get(black, 0) + 1
       else:
-        curr_results.append((game_data[1][0][0], game_data[1][0][1], game_data[1][1]))
+        curr_results.append((white, black, [1, 0, 0] if result == "1-0" else [0, 0, 1] if result == "0-1" else [0, 1, 0]))
 
       if len(curr_results) > SHARD_SIZE:
         def to_paired(pos):
@@ -345,7 +346,7 @@ def process_pgns(
             num_in_1 = min(1, len(curr_sequences[pos[1]]))
             has_seq_pos_count += num_in_1
           total_seq_pos_count += 10
-          return (list(map(lambda x: x[0], random.sample(curr_sequences[pos[0]], num_in_0))) if pos[0] in curr_sequences else [], list(map(lambda x: x[0], random.sample(curr_sequences[pos[1]], num_in_1))) if pos[1] in curr_sequences else [], pos)
+          return (list(map(lambda x: x[0], random.sample(curr_sequences[pos[0]], num_in_0))) if pos[0] in curr_sequences else [], list(map(lambda x: x[0], random.sample(curr_sequences[pos[1]], num_in_1))) if pos[1] in curr_sequences else [], pos[2])
         curr_paired_positions = map(to_paired, curr_results)
         save_shard(f"{output_prefix}/seq_shards/{curr_pos_shard_idx:04d}.tfrecord", curr_paired_positions, serialize_position)
         curr_pos_shard_idx += 1
