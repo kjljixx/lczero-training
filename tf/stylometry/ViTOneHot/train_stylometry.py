@@ -131,7 +131,7 @@ def create_seq_dataset(
                 black_planes[m_idx] = p.astype(np.float32)
                 black_mask[m_idx] = 1.0
 
-            yield {'seq0': white_planes, 'seq1': black_planes, 'mask0': white_mask, 'mask1': black_mask}, np.float32(wdl_val)
+            yield {'seq0': white_planes, 'seq1': black_planes, 'mask0': white_mask, 'mask1': black_mask}, wdl_val.astype(np.float32)
           except Exception as e:
             print(f"Skipping corrupted record in {shard_path}: {e}")
             continue
@@ -146,7 +146,7 @@ def create_seq_dataset(
       'mask0': tf.TensorSpec(shape=(MAX_MOVES,), dtype=tf.float32),                  # type: ignore
       'mask1': tf.TensorSpec(shape=(MAX_MOVES,), dtype=tf.float32),                  # type: ignore
     },
-    tf.TensorSpec(shape=(), dtype=tf.float32)  # type: ignore
+    tf.TensorSpec(shape=(3,), dtype=tf.float32)  # type: ignore
   )
 
   dataset = tf.data.Dataset.from_generator(generator, output_signature=output_signature)
@@ -231,8 +231,14 @@ class GameOutcomePredictor(tf.keras.Model):
     return cls(elo_predictor=elo_predictor, **config)
   
   def call(self, inputs, training=None, mask=None):
-    elo0 = self.elo_predictor(inputs[:, 0], training=training, mask=mask)
-    elo1 = self.elo_predictor(inputs[:, 1], training=training, mask=mask)
+    seq0 = inputs['seq0']
+    seq1 = inputs['seq1']
+    mask0 = inputs.get('mask0', None)
+    mask1 = inputs.get('mask1', None)
+
+    elo0 = self.elo_predictor({'seq': seq0, 'mask': mask0}, training=training)
+    elo1 = self.elo_predictor({'seq': seq1, 'mask': mask1}, training=training)
+
     elo = elo0 - elo1
     # Convert elo to win/draw/loss probabilities using logistic function
     p_win = 1 / (1 + tf.exp(-elo / 400))
