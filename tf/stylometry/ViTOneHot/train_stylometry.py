@@ -285,7 +285,8 @@ def train_model(
   )
 
   if start_checkpoint != "":
-    model = tf.keras.models.load_model(start_checkpoint)
+    elo_predictor_model = tf.keras.models.load_model(start_checkpoint)
+    model = GameOutcomePredictor(elo_predictor=elo_predictor_model)
   else:
     model = GameOutcomePredictor(
       elo_predictor=EloPredictor(
@@ -300,7 +301,7 @@ def train_model(
   model.compile(
     optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
     loss=tf.keras.losses.CategoricalCrossentropy(),
-    metrics=['accuracy', tf.keras.metrics.MeanAbsoluteError(name='mae')]
+    metrics=['accuracy', 'mse', tf.keras.metrics.MeanAbsoluteError(name='mae')]
   )
 
   model.build(input_shape={  # type: ignore
