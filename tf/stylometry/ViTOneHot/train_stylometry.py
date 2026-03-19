@@ -88,9 +88,9 @@ def parse_seq_example(serialized_example):
   # seq is stored as (MAX_MOVES, 5) uint64 flattened to bytes
   # decode_raw doesn't support uint64, so decode as int64 and reinterpret later
   white_seq = tf.io.decode_raw(example['stm_player_seq'], tf.int64)
-  white_seq = tf.reshape(white_seq, [MAX_MOVES, 5])
+  white_seq = tf.reshape(white_seq, [5, MAX_MOVES, 5])[0]
   black_seq = tf.io.decode_raw(example['opp_player_seq'], tf.int64)
-  black_seq = tf.reshape(black_seq, [MAX_MOVES, 5])
+  black_seq = tf.reshape(black_seq, [5, MAX_MOVES, 5])[0]
   return white_seq, black_seq, example['wdl']
 
 
