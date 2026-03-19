@@ -299,8 +299,8 @@ def train_model(
 
   model.compile(
     optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
-    loss=tf.keras.losses.MeanSquaredError(),
-    metrics=[tf.keras.metrics.MeanAbsoluteError(name='mae')]
+    loss=tf.keras.losses.CategoricalCrossentropy(),
+    metrics=['accuracy', tf.keras.metrics.MeanAbsoluteError(name='mae')]
   )
 
   model.build(input_shape={  # type: ignore
