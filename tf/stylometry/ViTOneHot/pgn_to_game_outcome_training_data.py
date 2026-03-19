@@ -294,13 +294,6 @@ def process_pgns(
     has_seq_pos_count = 0
     total_seq_pos_count = 0
 
-    white_wdl_counts = [0, 0, 0]
-    elo_wdl_counts = [0, 0, 0, 0]
-    engine_wdl_counts = [[0, 0, 0], [0, 0, 0], [0, 0, 0]]
-    engine_wdl_counts_no_draws = [[0, 0, 0], [0, 0, 0]]
-    elo_counts = {}
-    for i in range(1000, 3000, 100):
-      elo_counts[i] = 0
     while True:
       game = chess.pgn.read_game(pgn_file)
       if game is None:
@@ -354,32 +347,10 @@ def process_pgns(
 
       result = game.headers.get("Result", "*")
 
-      if DO_ENGINE_EVAL:
-        for pos in game.mainline():
-          board = pos.board()
-          eval_wdl = engine_eval(board)
-          prediction = max(enumerate(eval_wdl), key=lambda x: x[1])[0]
-
-          result_to_val = {"1-0": 0, "1/2-1/2": 1, "0-1": 2}
-
-          engine_wdl_counts[prediction][result_to_val[result]] += 1
-          
-          if isinstance(eval_wdl, chess.engine.Wdl):
-            engine_wdl_counts_no_draws[0 if eval_wdl.expectation() > 0 else 1][result_to_val[result]] += 1
-          else:
-            engine_wdl_counts_no_draws[0 if eval_wdl[0] > eval_wdl[2] else 1][result_to_val[result]] += 1
-
       game_count += 1
       if game_count % 100 == 0:
         logger.info(f"Processed: {game_count} games in PGN")
         logger.info(f"In Memory: {len(curr_sequences)} sequences, {len(curr_results)} positions")
-        logger.info(f"Higher elo WDL dist (not accounting for skipping): {elo_wdl_counts}, As Pct: {[f'{100*count/sum(elo_wdl_counts):.2f}' for count in elo_wdl_counts]}")
-        logger.info(f"Engine predicted WDL dist matrix (not accounting for skipping, [engine_pred][actual]): {engine_wdl_counts}, " +
-                    (f"As Pct: {[f'{100*sum(engine_wdl_counts[i])/sum(sum(engine_wdl_counts, [])):.2f}' for i in range(3)]}, " +
-                    f"Accuracy: {100*(engine_wdl_counts[0][0] + engine_wdl_counts[1][1] + engine_wdl_counts[2][2])/sum(sum(engine_wdl_counts, [])):.2f}%, " +
-                    f"Accuracy w/o draws: {100*(engine_wdl_counts_no_draws[0][0] + engine_wdl_counts_no_draws[1][2])/(sum(engine_wdl_counts_no_draws[0]) + sum(engine_wdl_counts_no_draws[1])):.2f}%")
-                    if DO_ENGINE_EVAL else "")
-        logger.info(f"Elo counts (not accounting for skipping): {elo_counts}")
         logger.info(f"Player count: {player_mapper.num_players()}")
         logger.info(f"Has sequences in positions: {has_seq_pos_count}/{total_seq_pos_count} ({(has_seq_pos_count/total_seq_pos_count)*100 if total_seq_pos_count > 0 else 0:.2f}%)")
         player_mapper.save(f"{output_prefix}/player_map_{game_count % 2}.txt")
