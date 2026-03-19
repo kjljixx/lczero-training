@@ -308,12 +308,7 @@ def process_pgns(
       if game.headers["White"] == "?" or game.headers["Black"] == "?":
         continue
 
-      game_data = extract_game_data(
-        game, player_mapper, max_moves
-      )
-
-      #make sure both players played at least 1 move
-      if len(game_data[0][0][0]) < min_moves or len(game_data[0][1][0]) < min_moves:
+      if len(list(game.mainline())) < min_moves*2:
         continue
       
       white = player_mapper.get_index(game.headers["White"])
@@ -321,6 +316,9 @@ def process_pgns(
       result = game.headers.get("Result", "*")
       rand = random.random()
       if (seq_counts.get(white, 0) < 5 or seq_counts.get(black, 0) < 5) and rand < 0.8:
+        game_data = extract_game_data(
+          game, player_mapper, max_moves
+        )
         if white in curr_sequences:
           curr_sequences[white].append(game_data[0][0])
         else:
@@ -356,22 +354,6 @@ def process_pgns(
 
       result = game.headers.get("Result", "*")
 
-      white_wdl_counts[0] += len(game_data[1]) if result == "1-0" else 0
-      white_wdl_counts[1] += len(game_data[1]) if result == "1/2-1/2" else 0
-      white_wdl_counts[2] += len(game_data[1]) if result == "0-1" else 0
-
-      try:
-        white_elo = int(game.headers.get("WhiteElo", "0"))
-        black_elo = int(game.headers.get("BlackElo", "0"))
-        elo_diff = white_elo - black_elo
-        result_to_val = {"1-0": 1, "1/2-1/2": 0.5, "0-1": 0}
-        adjusted_result = 1-result_to_val[result] if elo_diff < 0 else result_to_val[result]
-        elo_wdl_counts[0] += len(game_data[1]) if adjusted_result == 1 else 0
-        elo_wdl_counts[1] += len(game_data[1]) if adjusted_result == 0.5 else 0
-        elo_wdl_counts[2] += len(game_data[1]) if adjusted_result == 0 else 0
-      except:
-        elo_wdl_counts[3] += len(game_data[1])
-
       if DO_ENGINE_EVAL:
         for pos in game.mainline():
           board = pos.board()
@@ -386,15 +368,6 @@ def process_pgns(
             engine_wdl_counts_no_draws[0 if eval_wdl.expectation() > 0 else 1][result_to_val[result]] += 1
           else:
             engine_wdl_counts_no_draws[0 if eval_wdl[0] > eval_wdl[2] else 1][result_to_val[result]] += 1
-      
-      white_elo = int(game.headers.get("WhiteElo", "0"))
-      black_elo = int(game.headers.get("BlackElo", "0"))
-      white_elo_bucket = (white_elo // 100) * 100
-      black_elo_bucket = (black_elo // 100) * 100
-      if white_elo_bucket in elo_counts:
-        elo_counts[white_elo_bucket] += len(game_data[1])
-      if black_elo_bucket in elo_counts:
-        elo_counts[black_elo_bucket] += len(game_data[1])
 
       game_count += 1
       if game_count % 100 == 0:
