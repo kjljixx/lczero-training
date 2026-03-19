@@ -373,7 +373,6 @@ def process_pgns(
       if game_count % 100 == 0:
         logger.info(f"Processed: {game_count} games in PGN")
         logger.info(f"In Memory: {len(curr_sequences)} sequences, {len(curr_results)} positions")
-        logger.info(f"WDL dist (from white POV) (not accounting for skipping): {white_wdl_counts}, As Pct: {[f'{100*count/sum(white_wdl_counts):.2f}' for count in white_wdl_counts]}")
         logger.info(f"Higher elo WDL dist (not accounting for skipping): {elo_wdl_counts}, As Pct: {[f'{100*count/sum(elo_wdl_counts):.2f}' for count in elo_wdl_counts]}")
         logger.info(f"Engine predicted WDL dist matrix (not accounting for skipping, [engine_pred][actual]): {engine_wdl_counts}, " +
                     (f"As Pct: {[f'{100*sum(engine_wdl_counts[i])/sum(sum(engine_wdl_counts, [])):.2f}' for i in range(3)]}, " +
