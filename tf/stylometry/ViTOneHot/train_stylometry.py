@@ -80,15 +80,18 @@ def chessboard_struct_to_lc0_planes(structs, short=False):
 def parse_seq_example(serialized_example):
   """Parse a sequence record produced by pgn_to_training_data.py."""
   feature_description = {
-    'seq': tf.io.FixedLenFeature([], tf.string),
-    'elo': tf.io.FixedLenFeature([1], tf.float32),
+    'stm_player_seq': tf.io.FixedLenFeature([], tf.string),
+    'opp_player_seq': tf.io.FixedLenFeature([], tf.string),
+    'wdl': tf.io.FixedLenFeature([3], tf.float32),
   }
   example = tf.io.parse_single_example(serialized_example, feature_description)
   # seq is stored as (MAX_MOVES, 5) uint64 flattened to bytes
   # decode_raw doesn't support uint64, so decode as int64 and reinterpret later
-  seq = tf.io.decode_raw(example['seq'], tf.int64)
-  seq = tf.reshape(seq, [MAX_MOVES, 5])
-  return seq, example['elo'][0]
+  white_seq = tf.io.decode_raw(example['stm_player_seq'], tf.int64)
+  white_seq = tf.reshape(white_seq, [5, MAX_MOVES, 5])[0]
+  black_seq = tf.io.decode_raw(example['opp_player_seq'], tf.int64)
+  black_seq = tf.reshape(black_seq, [5, MAX_MOVES, 5])[0]
+  return white_seq, black_seq, example['wdl']
 
 
 def create_seq_dataset(
@@ -105,21 +108,30 @@ def create_seq_dataset(
         raw_ds = tf.data.TFRecordDataset(shard_path)
         for raw_record in raw_ds:
           try:
-            seq_tensor, elo_tensor = parse_seq_example(raw_record)
-            seq_np = seq_tensor.numpy().view(np.uint64)   # (MAX_MOVES, 5)
-            elo_val = float(elo_tensor.numpy())
+            white_seq, black_seq, wdl_tensor = parse_seq_example(raw_record)
+            white_seq_np = white_seq.numpy().view(np.uint64)   # (MAX_MOVES, 5)
+            black_seq_np = black_seq.numpy().view(np.uint64)   # (MAX_MOVES, 5)
+            wdl_val = wdl_tensor.numpy()
 
-            planes = np.zeros((MAX_MOVES, SEQ_PLANES, 8, 8), dtype=np.float32)
-            mask = np.zeros((MAX_MOVES,), dtype=np.float32)
+            white_planes = np.zeros((MAX_MOVES, SEQ_PLANES, 8, 8), dtype=np.float32)
+            black_planes = np.zeros((MAX_MOVES, SEQ_PLANES, 8, 8), dtype=np.float32)
+            white_mask = np.zeros((MAX_MOVES,), dtype=np.float32)
+            black_mask = np.zeros((MAX_MOVES,), dtype=np.float32)
 
             for m_idx in range(MAX_MOVES):
-              struct = seq_np[m_idx]
+              struct = white_seq_np[m_idx]
               if np.any(struct > 0):
                 p, _ = chessboard_struct_to_lc0_planes(struct, short=True)
-                planes[m_idx] = p.astype(np.float32)
-                mask[m_idx] = 1.0
+                white_planes[m_idx] = p.astype(np.float32)
+                white_mask[m_idx] = 1.0
+            for m_idx in range(MAX_MOVES):
+              struct = black_seq_np[m_idx]
+              if np.any(struct > 0):
+                p, _ = chessboard_struct_to_lc0_planes(struct, short=True)
+                black_planes[m_idx] = p.astype(np.float32)
+                black_mask[m_idx] = 1.0
 
-            yield {'seq': planes, 'mask': mask}, np.float32(elo_val)
+            yield {'seq0': white_planes, 'seq1': black_planes, 'mask0': white_mask, 'mask1': black_mask}, wdl_val.astype(np.float32)
           except Exception as e:
             print(f"Skipping corrupted record in {shard_path}: {e}")
             continue
@@ -129,10 +141,12 @@ def create_seq_dataset(
 
   output_signature = (
     {
-      'seq': tf.TensorSpec(shape=(MAX_MOVES, SEQ_PLANES, 8, 8), dtype=tf.float32),  # type: ignore
-      'mask': tf.TensorSpec(shape=(MAX_MOVES,), dtype=tf.float32),                  # type: ignore
+      'seq0': tf.TensorSpec(shape=(MAX_MOVES, SEQ_PLANES, 8, 8), dtype=tf.float32),  # type: ignore
+      'seq1': tf.TensorSpec(shape=(MAX_MOVES, SEQ_PLANES, 8, 8), dtype=tf.float32),  # type: ignore
+      'mask0': tf.TensorSpec(shape=(MAX_MOVES,), dtype=tf.float32),                  # type: ignore
+      'mask1': tf.TensorSpec(shape=(MAX_MOVES,), dtype=tf.float32),                  # type: ignore
     },
-    tf.TensorSpec(shape=(), dtype=tf.float32)  # type: ignore
+    tf.TensorSpec(shape=(3,), dtype=tf.float32)  # type: ignore
   )
 
   dataset = tf.data.Dataset.from_generator(generator, output_signature=output_signature)
@@ -200,6 +214,37 @@ class EloPredictor(tf.keras.Model):
     elo = self.regression_head(embedding, training=training)  # (batch, 1)
     return tf.squeeze(elo, axis=-1)  # (batch,)
 
+class GameOutcomePredictor(tf.keras.Model):
+  def __init__(self, elo_predictor: EloPredictor, **kwargs):
+    super(GameOutcomePredictor, self).__init__(**kwargs)
+    self.elo_predictor = elo_predictor
+  
+  def get_config(self):
+    config = super().get_config()
+    config['elo_predictor'] = tf.keras.utils.serialize_keras_object(self.elo_predictor)
+    return config
+
+  @classmethod
+  def from_config(cls, config, custom_objects=None):
+    elo_predictor_config = config.pop('elo_predictor')
+    elo_predictor = tf.keras.utils.deserialize_keras_object(elo_predictor_config)
+    return cls(elo_predictor=elo_predictor, **config)
+  
+  def call(self, inputs, training=None, mask=None):
+    seq0 = inputs['seq0']
+    seq1 = inputs['seq1']
+    mask0 = inputs.get('mask0', None)
+    mask1 = inputs.get('mask1', None)
+
+    elo0 = self.elo_predictor({'seq': seq0, 'mask': mask0}, training=training)
+    elo1 = self.elo_predictor({'seq': seq1, 'mask': mask1}, training=training)
+
+    elo = elo0 - elo1
+    # Convert elo to win/draw/loss probabilities using logistic function
+    p_win = 1 / (1 + tf.exp(-elo / 400))
+    p_loss = 1 - p_win
+    p_draw = tf.zeros_like(p_win)  # Placeholder for draw probability
+    return tf.stack([p_win, p_draw, p_loss], axis=-1)  # (batch, 3)
 
 def train_model(
   data_dir: str,
@@ -240,25 +285,30 @@ def train_model(
   )
 
   if start_checkpoint != "":
-    model = tf.keras.models.load_model(start_checkpoint)
+    elo_predictor_model = tf.keras.models.load_model(start_checkpoint)
+    model = GameOutcomePredictor(elo_predictor=elo_predictor_model)
   else:
-    model = EloPredictor(
-      vit=stylo_model,
-      hidden_dim=hidden_dim,
-      ffn_hidden_dim=ffn_hidden_dim,
-      ffn_layers=ffn_layers
+    model = GameOutcomePredictor(
+      elo_predictor=EloPredictor(
+        vit=stylo_model,
+        hidden_dim=hidden_dim,
+        ffn_hidden_dim=ffn_hidden_dim,
+        ffn_layers=ffn_layers
+      )
     )
-  assert isinstance(model, EloPredictor)
+  assert isinstance(model, GameOutcomePredictor)
 
   model.compile(
     optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
-    loss=tf.keras.losses.MeanSquaredError(),
-    metrics=[tf.keras.metrics.MeanAbsoluteError(name='mae')]
+    loss=tf.keras.losses.CategoricalCrossentropy(),
+    metrics=['accuracy', 'mse', tf.keras.metrics.MeanAbsoluteError(name='mae')]
   )
 
   model.build(input_shape={  # type: ignore
-    'seq': (None, MAX_MOVES, SEQ_PLANES, 8, 8),
-    'mask': (None, MAX_MOVES),
+    'seq0': (None, MAX_MOVES, SEQ_PLANES, 8, 8),
+    'seq1': (None, MAX_MOVES, SEQ_PLANES, 8, 8),
+    'mask0': (None, MAX_MOVES),
+    'mask1': (None, MAX_MOVES),
   })
 
   class LearningRateLogger(tf.keras.callbacks.Callback):

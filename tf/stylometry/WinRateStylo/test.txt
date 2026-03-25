@@ -60,3 +60,6 @@ no_stylo:
 
 5 games for elo:
 2026-03-16 17:39:53,324 - __main__ - INFO - Running - games=750300, n=1605632, model_acc=0.4729, seq_size=5.000080965003189, elo_acc=0.5742, elo_model_acc=0.5403, sf_acc=0.4729
+
+2026-03-16
+ 277/5000 [>.............................] - ETA: 43:13 - loss: 1.5915 - accuracy: 0.5343 - mse: 0.1829 - mae: 0.3377
