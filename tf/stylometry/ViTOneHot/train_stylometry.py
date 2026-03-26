@@ -403,4 +403,4 @@ if __name__ == "__main__":
     ffn_layers=args.ffn_layers,
     ffn_hidden_dim=args.ffn_hidden_dim
   )
-# python3 -m stylometry.ViTOneHot.train_stylometry <data_dir>
+# python3 -m stylometry.ViTOneHot.train_stylometry stylometry/ViTOneHot/data/run2026-03-16/ --output-dir stylometry/ViTOneHot/models/run2026-03-21 --start-checkpoint stylometry/ViTOneHot/models/run2026-03-02-lr-0.00005/checkpoint_epoch_36.keras
