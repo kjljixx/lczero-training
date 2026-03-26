@@ -82,6 +82,10 @@ def parse_seq_example(serialized_example):
   feature_description = {
     'stm_player_seq': tf.io.FixedLenFeature([], tf.string),
     'opp_player_seq': tf.io.FixedLenFeature([], tf.string),
+    'stm_player_name': tf.io.FixedLenFeature([], tf.string),
+    'stm_player_elo': tf.io.FixedLenFeature([], tf.int64),
+    'opp_player_name': tf.io.FixedLenFeature([], tf.string),
+    'opp_player_elo': tf.io.FixedLenFeature([], tf.int64),
     'wdl': tf.io.FixedLenFeature([3], tf.float32),
   }
   example = tf.io.parse_single_example(serialized_example, feature_description)

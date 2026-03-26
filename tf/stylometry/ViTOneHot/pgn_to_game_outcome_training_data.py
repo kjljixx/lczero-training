@@ -13,6 +13,8 @@ import os
 
 logger = logging.getLogger(__name__)
 
+MIN_STARTING_TIME = 180
+
 class PlayerIndexMapper:
   def __init__(self):
     self.player_to_idx: Dict[str, int] = {}
@@ -299,6 +301,8 @@ def process_pgns(
       if game is None:
         break
       if game.headers["White"] == "?" or game.headers["Black"] == "?":
+        continue
+      if int(game.headers.get("TimeControl", "600+0").split('+')[0]) < MIN_STARTING_TIME:
         continue
 
       if len(list(game.mainline())) < min_moves*2:
