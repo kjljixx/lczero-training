@@ -308,12 +308,10 @@ def process_pgns(
       if len(list(game.mainline())) < min_moves*2:
         continue
       
-      white = player_mapper.get_index(game.headers["White"])
-      black = player_mapper.get_index(game.headers["Black"])
+      white = player_mapper.get_or_create_index(game.headers["White"])
+      black = player_mapper.get_or_create_index(game.headers["Black"])
       result = game.headers.get("Result", "*")
       rand = random.random()
-      print(white, black, result)
-      print(seq_counts.get(white, 0), seq_counts.get(black, 0), rand)
       if (seq_counts.get(white, 0) < 5 or seq_counts.get(black, 0) < 5) and rand < 0.8:
         game_data = extract_game_data(
           game, player_mapper, max_moves
