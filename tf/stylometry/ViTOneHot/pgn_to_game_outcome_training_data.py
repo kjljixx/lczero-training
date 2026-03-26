@@ -327,7 +327,8 @@ def process_pgns(
         seq_counts[white] = seq_counts.get(white, 0) + 1
         seq_counts[black] = seq_counts.get(black, 0) + 1
       else:
-        curr_results.append((white, black, [1, 0, 0] if result == "1-0" else [0, 0, 1] if result == "0-1" else [0, 1, 0]
+        curr_results.append((white, black, [1, 0, 0] if result == "1-0" else [0, 0, 1] if result == "0-1" else [0, 1, 0],
+                             game.headers["White"], game.headers["Black"]
                             ,int(game.headers.get("WhiteElo", "0")), int(game.headers.get("BlackElo", "0"))))
 
       if len(curr_results) > SHARD_SIZE:
@@ -343,7 +344,7 @@ def process_pgns(
             has_seq_pos_count += num_in_1
           total_seq_pos_count += 10
           return (list(map(lambda x: x[0], random.sample(curr_sequences[pos[0]], num_in_0))) if pos[0] in curr_sequences else [], list(map(lambda x: x[0], random.sample(curr_sequences[pos[1]], num_in_1))) if pos[1] in curr_sequences else [], pos[2],
-                  pos[0], pos[1], pos[3], pos[4])
+                  pos[3], pos[4], pos[5], pos[6])
         curr_paired_positions = map(to_paired, curr_results)
         save_shard(f"{output_prefix}/seq_shards/{curr_pos_shard_idx:04d}.tfrecord", curr_paired_positions, serialize_position)
         curr_pos_shard_idx += 1
