@@ -302,7 +302,7 @@ def process_pgns(
         break
       if game.headers["White"] == "?" or game.headers["Black"] == "?":
         continue
-      if int(game.headers.get("TimeControl", "600+0").split('+')[0]) < MIN_STARTING_TIME:
+      if game.headers.get("TimeControl", "600+0") == "-" or int(game.headers.get("TimeControl", "600+0").split('+')[0]) < MIN_STARTING_TIME:
         continue
 
       if len(list(game.mainline())) < min_moves*2:
