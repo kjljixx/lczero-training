@@ -3,6 +3,8 @@ os.environ["TF_USE_LEGACY_KERAS"] = "1"
 import glob
 import argparse
 import random
+import json
+from datetime import datetime
 import tensorflow as tf
 import numpy as np
 from typing import Tuple, List
@@ -10,8 +12,113 @@ from typing import Tuple, List
 from stylometry.ViTOneHot.game_aggregate_vit import GameAggregateViT
 
 
+def _training_flag(training) -> bool:
+  return bool(training) if training is not None else False
+
+
 MAX_MOVES = 100
 SEQ_PLANES = 21
+
+PIECE_SYMBOLS = {
+  1: 'p',
+  2: 'n',
+  3: 'b',
+  4: 'r',
+  5: 'q',
+  6: 'k',
+}
+
+
+def _flip_vertical_square(square: int) -> int:
+  rank = square // 8
+  file = square % 8
+  return (7 - rank) * 8 + file
+
+
+def chessboard_struct_to_fen_like(struct: np.ndarray) -> str:
+  values = np.asarray(struct, dtype=np.uint64)
+  if values.shape[0] < 5 or not np.any(values > 0):
+    return ""
+
+  occ = int(values[0])
+  pcs_1 = int(values[1])
+  pcs_2 = int(values[2])
+  metadata = int(values[4])
+
+  stm_is_black = ((metadata >> 24) & 0x1) == 1
+  us_qs = ((metadata >> 24) & 0x2) != 0
+  us_ks = ((metadata >> 24) & 0x4) != 0
+  them_qs = ((metadata >> 24) & 0x8) != 0
+  them_ks = ((metadata >> 24) & 0x10) != 0
+  halfmove_clock = (metadata >> 16) & 0xFF
+
+  board = [''] * 64
+  pcs_1_idx = 0
+  pcs_2_idx = 0
+  for sq in range(64):
+    if occ & (1 << sq):
+      if pcs_1_idx < 16:
+        val = (pcs_1 >> (4 * pcs_1_idx)) & 0xF
+        pcs_1_idx += 1
+      else:
+        val = (pcs_2 >> (4 * pcs_2_idx)) & 0xF
+        pcs_2_idx += 1
+
+      piece_type = (val & 0x7) + 1
+      is_stm_piece = (val & 0x8) == 0
+      symbol = PIECE_SYMBOLS.get(piece_type, '?')
+
+      if stm_is_black:
+        absolute_sq = _flip_vertical_square(sq)
+        is_white_piece = not is_stm_piece
+      else:
+        absolute_sq = sq
+        is_white_piece = is_stm_piece
+
+      board[absolute_sq] = symbol.upper() if is_white_piece else symbol
+
+  ranks = []
+  for rank in range(7, -1, -1):
+    empty = 0
+    rank_str = []
+    for file in range(8):
+      piece = board[rank * 8 + file]
+      if piece:
+        if empty > 0:
+          rank_str.append(str(empty))
+          empty = 0
+        rank_str.append(piece)
+      else:
+        empty += 1
+    if empty > 0:
+      rank_str.append(str(empty))
+    ranks.append(''.join(rank_str))
+  placement = '/'.join(ranks)
+
+  stm_side = 'b' if stm_is_black else 'w'
+  if stm_is_black:
+    white_ks, white_qs, black_ks, black_qs = them_ks, them_qs, us_ks, us_qs
+  else:
+    white_ks, white_qs, black_ks, black_qs = us_ks, us_qs, them_ks, them_qs
+
+  castling = (
+    ('K' if white_ks else '')
+    + ('Q' if white_qs else '')
+    + ('k' if black_ks else '')
+    + ('q' if black_qs else '')
+  )
+  if castling == '':
+    castling = '-'
+
+  return f"{placement} {stm_side} {castling} - {halfmove_clock} 1"
+
+
+def _decode_name(name_value) -> str:
+  if isinstance(name_value, bytes):
+    return name_value.decode('utf-8', errors='replace')
+  if isinstance(name_value, np.bytes_):
+    return bytes(name_value).decode('utf-8', errors='replace')
+  return str(name_value)
 
 def chessboard_struct_to_lc0_planes(structs, short=False):
   num_positions = 1 if short else 8
@@ -95,7 +202,15 @@ def parse_seq_example(serialized_example):
   white_seq = tf.reshape(white_seq, [5, MAX_MOVES, 5])[0]
   black_seq = tf.io.decode_raw(example['opp_player_seq'], tf.int64)
   black_seq = tf.reshape(black_seq, [5, MAX_MOVES, 5])[0]
-  return white_seq, black_seq, example['wdl']
+  return (
+    white_seq,
+    black_seq,
+    example['stm_player_name'],
+    example['stm_player_elo'],
+    example['opp_player_name'],
+    example['opp_player_elo'],
+    example['wdl'],
+  )
 
 
 def create_seq_dataset(
@@ -105,14 +220,22 @@ def create_seq_dataset(
   repeat: bool = True,
   skip_rate: float = 0.0
 ) -> tf.data.Dataset:
-  """Dataset that yields (inputs_dict, elo) from seq_shards."""
+  """Dataset that yields model inputs plus metadata and WDL labels from seq_shards."""
   def generator():
     for shard_path in shard_paths:
       try:
         raw_ds = tf.data.TFRecordDataset(shard_path)
         for raw_record in raw_ds:
           try:
-            white_seq, black_seq, wdl_tensor = parse_seq_example(raw_record)
+            (
+              white_seq,
+              black_seq,
+              stm_name,
+              stm_elo,
+              opp_name,
+              opp_elo,
+              wdl_tensor,
+            ) = parse_seq_example(raw_record)
             white_seq_np = white_seq.numpy().view(np.uint64)   # (MAX_MOVES, 5)
             black_seq_np = black_seq.numpy().view(np.uint64)   # (MAX_MOVES, 5)
             wdl_val = wdl_tensor.numpy()
@@ -135,7 +258,18 @@ def create_seq_dataset(
                 black_planes[m_idx] = p.astype(np.float32)
                 black_mask[m_idx] = 1.0
 
-            yield {'seq0': white_planes, 'seq1': black_planes, 'mask0': white_mask, 'mask1': black_mask}, wdl_val.astype(np.float32)
+            yield {
+              'seq0': white_planes,
+              'seq1': black_planes,
+              'mask0': white_mask,
+              'mask1': black_mask,
+              'raw_seq0': white_seq.numpy().astype(np.int64),
+              'raw_seq1': black_seq.numpy().astype(np.int64),
+              'stm_player_name': stm_name.numpy(),
+              'opp_player_name': opp_name.numpy(),
+              'stm_player_elo': np.int64(stm_elo.numpy()),
+              'opp_player_elo': np.int64(opp_elo.numpy()),
+            }, wdl_val.astype(np.float32)
           except Exception as e:
             print(f"Skipping corrupted record in {shard_path}: {e}")
             continue
@@ -149,6 +283,12 @@ def create_seq_dataset(
       'seq1': tf.TensorSpec(shape=(MAX_MOVES, SEQ_PLANES, 8, 8), dtype=tf.float32),  # type: ignore
       'mask0': tf.TensorSpec(shape=(MAX_MOVES,), dtype=tf.float32),                  # type: ignore
       'mask1': tf.TensorSpec(shape=(MAX_MOVES,), dtype=tf.float32),                  # type: ignore
+      'raw_seq0': tf.TensorSpec(shape=(MAX_MOVES, 5), dtype=tf.int64),               # type: ignore
+      'raw_seq1': tf.TensorSpec(shape=(MAX_MOVES, 5), dtype=tf.int64),               # type: ignore
+      'stm_player_name': tf.TensorSpec(shape=(), dtype=tf.string),                    # type: ignore
+      'opp_player_name': tf.TensorSpec(shape=(), dtype=tf.string),                    # type: ignore
+      'stm_player_elo': tf.TensorSpec(shape=(), dtype=tf.int64),                      # type: ignore
+      'opp_player_elo': tf.TensorSpec(shape=(), dtype=tf.int64),                      # type: ignore
     },
     tf.TensorSpec(shape=(3,), dtype=tf.float32)  # type: ignore
   )
@@ -214,8 +354,9 @@ class EloPredictor(tf.keras.Model):
       seq = inputs
       m = None
 
-    embedding = self.vit(seq, training=training, mask=m)  # (batch, hidden_dim)
-    elo = self.regression_head(embedding, training=training)  # (batch, 1)
+    is_training = _training_flag(training)
+    embedding = self.vit(seq, training=is_training, mask=m)  # (batch, hidden_dim)
+    elo = self.regression_head(embedding, training=is_training)  # (batch, 1)
     return tf.squeeze(elo, axis=-1)  # (batch,)
 
 class GameOutcomePredictor(tf.keras.Model):
@@ -240,8 +381,9 @@ class GameOutcomePredictor(tf.keras.Model):
     mask0 = inputs.get('mask0', None)
     mask1 = inputs.get('mask1', None)
 
-    elo0 = self.elo_predictor({'seq': seq0, 'mask': mask0}, training=training)
-    elo1 = self.elo_predictor({'seq': seq1, 'mask': mask1}, training=training)
+    is_training = _training_flag(training)
+    elo0 = self.elo_predictor({'seq': seq0, 'mask': mask0}, training=is_training)
+    elo1 = self.elo_predictor({'seq': seq1, 'mask': mask1}, training=is_training)
 
     elo = elo0 - elo1
     # Convert elo to win/draw/loss probabilities using logistic function
@@ -249,6 +391,103 @@ class GameOutcomePredictor(tf.keras.Model):
     p_loss = 1 - p_win
     p_draw = tf.zeros_like(p_win)  # Placeholder for draw probability
     return tf.stack([p_win, p_draw, p_loss], axis=-1)  # (batch, 3)
+
+
+class PeriodicSampleLogger(tf.keras.callbacks.Callback):
+  def __init__(
+    self,
+    val_dataset: tf.data.Dataset,
+    output_dir: str,
+    interval_batches: int,
+    sample_count: int,
+    log_filename: str,
+  ):
+    super().__init__()
+    self.val_dataset = val_dataset
+    self.interval_batches = max(1, int(interval_batches))
+    self.sample_count = max(1, int(sample_count))
+    self.log_path = os.path.join(output_dir, log_filename)
+    self._val_iter = iter(self.val_dataset)
+    with open(self.log_path, 'a', encoding='utf-8') as handle:
+      handle.write(json.dumps({
+        'event': 'run_start',
+        'timestamp': datetime.utcnow().isoformat() + 'Z',
+        'interval_batches': self.interval_batches,
+        'sample_count': self.sample_count,
+      }) + '\n')
+
+  def _next_batch(self):
+    try:
+      return next(self._val_iter)
+    except StopIteration:
+      self._val_iter = iter(self.val_dataset)
+      return next(self._val_iter)
+
+  @staticmethod
+  def _model_inputs(inputs):
+    return {
+      'seq0': inputs['seq0'],
+      'seq1': inputs['seq1'],
+      'mask0': inputs['mask0'],
+      'mask1': inputs['mask1'],
+    }
+
+  def _seq_to_fens(self, raw_seq: np.ndarray, mask: np.ndarray) -> List[str]:
+    fens = []
+    for idx in range(min(raw_seq.shape[0], mask.shape[0])):
+      if mask[idx] <= 0.0:
+        continue
+      struct = raw_seq[idx].astype(np.uint64)
+      fen = chessboard_struct_to_fen_like(struct)
+      if fen:
+        fens.append(fen)
+    return fens
+
+  def on_train_batch_end(self, batch, logs=None):
+    if (batch + 1) % self.interval_batches != 0:
+      return
+
+    try:
+      if self.model is None:
+        return
+      inputs, labels = self._next_batch()
+      preds = self.model(self._model_inputs(inputs), training=False).numpy()
+      labels_np = labels.numpy()
+
+      raw_seq0 = inputs['raw_seq0'].numpy()
+      raw_seq1 = inputs['raw_seq1'].numpy()
+      mask0 = inputs['mask0'].numpy()
+      mask1 = inputs['mask1'].numpy()
+      stm_names = inputs['stm_player_name'].numpy()
+      opp_names = inputs['opp_player_name'].numpy()
+      stm_elos = inputs['stm_player_elo'].numpy()
+      opp_elos = inputs['opp_player_elo'].numpy()
+
+      total = min(self.sample_count, preds.shape[0])
+      step = int(self.model.optimizer.iterations.numpy()) if self.model.optimizer is not None else -1
+      with open(self.log_path, 'a', encoding='utf-8') as handle:
+        for idx in range(total):
+          pred = np.asarray(preds[idx], dtype=np.float64)
+          true = np.asarray(labels_np[idx], dtype=np.float64)
+
+          record = {
+            'event': 'sample',
+            'timestamp': datetime.utcnow().isoformat() + 'Z',
+            'batch': int(batch),
+            'step': step,
+            'sample_index': int(idx),
+            'stm_player_name': _decode_name(stm_names[idx]),
+            'opp_player_name': _decode_name(opp_names[idx]),
+            'stm_player_elo': int(stm_elos[idx]),
+            'opp_player_elo': int(opp_elos[idx]),
+            'pred_wdl': np.nan_to_num(pred, nan=0.0, posinf=1.0, neginf=0.0).tolist(),
+            'true_wdl': np.nan_to_num(true, nan=0.0, posinf=1.0, neginf=0.0).tolist(),
+            'seq0_fens': self._seq_to_fens(raw_seq0[idx], mask0[idx]),
+            'seq1_fens': self._seq_to_fens(raw_seq1[idx], mask1[idx]),
+          }
+          handle.write(json.dumps(record) + '\n')
+    except Exception as e:
+      print(f"Sample logging failed at batch {batch}: {e}")
 
 def train_model(
   data_dir: str,
@@ -263,7 +502,10 @@ def train_model(
   mlp_dim: int,
   hidden_dim: int,
   ffn_layers: int,
-  ffn_hidden_dim: int
+  ffn_hidden_dim: int,
+  sample_log_interval_batches: int,
+  sample_log_count: int,
+  sample_log_file: str,
 ):
   os.makedirs(output_dir, exist_ok=True)
 
@@ -321,9 +563,10 @@ def train_model(
       self._supports_tf_logs = True
 
     def on_epoch_end(self, epoch, logs=None):
-      if logs is None or "learning_rate" in logs:
+      if logs is None or "learning_rate" in logs or self.model is None or self.model.optimizer is None:
         return
-      logs["learning_rate"] = self.model.optimizer.lr
+      if isinstance(logs, dict):
+        logs["learning_rate"] = self.model.optimizer.learning_rate
 
   callbacks = [
     tf.keras.callbacks.ModelCheckpoint(
@@ -335,6 +578,13 @@ def train_model(
     tf.keras.callbacks.TensorBoard(
       log_dir=os.path.join(output_dir, 'logs'),
       histogram_freq=0
+    ),
+    PeriodicSampleLogger(
+      val_dataset=val_dataset,
+      output_dir=output_dir,
+      interval_batches=sample_log_interval_batches,
+      sample_count=sample_log_count,
+      log_filename=sample_log_file,
     ),
   ]
 
@@ -377,6 +627,9 @@ if __name__ == "__main__":
   parser.add_argument("--mlp-dim", type=int, default=256)
   parser.add_argument("--ffn-layers", type=int, default=2)
   parser.add_argument("--ffn-hidden-dim", type=int, default=256)
+  parser.add_argument("--sample-log-interval-batches", type=int, default=500)
+  parser.add_argument("--sample-log-count", type=int, default=10)
+  parser.add_argument("--sample-log-file", type=str, default="prediction_samples.jsonl")
 
   random.seed(42)
 
@@ -405,6 +658,9 @@ if __name__ == "__main__":
     mlp_dim=args.mlp_dim,
     hidden_dim=args.hidden_dim,
     ffn_layers=args.ffn_layers,
-    ffn_hidden_dim=args.ffn_hidden_dim
+    ffn_hidden_dim=args.ffn_hidden_dim,
+    sample_log_interval_batches=args.sample_log_interval_batches,
+    sample_log_count=args.sample_log_count,
+    sample_log_file=args.sample_log_file,
   )
 # python3 -m stylometry.ViTOneHot.train_stylometry <data_dir>
