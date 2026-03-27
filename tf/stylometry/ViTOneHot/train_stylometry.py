@@ -17,6 +17,7 @@ def _training_flag(training) -> bool:
 
 
 MAX_MOVES = 100
+NUM_GAMES = 5
 SEQ_PLANES = 21
 
 PIECE_SYMBOLS = {
@@ -196,12 +197,12 @@ def parse_seq_example(serialized_example):
     'wdl': tf.io.FixedLenFeature([3], tf.float32),
   }
   example = tf.io.parse_single_example(serialized_example, feature_description)
-  # seq is stored as (MAX_MOVES, 5) uint64 flattened to bytes
+  # seq is stored as (NUM_GAMES, MAX_MOVES, 5) uint64 flattened to bytes
   # decode_raw doesn't support uint64, so decode as int64 and reinterpret later
   white_seq = tf.io.decode_raw(example['stm_player_seq'], tf.int64)
-  white_seq = tf.reshape(white_seq, [5, MAX_MOVES, 5])[0]
+  white_seq = tf.reshape(white_seq, [NUM_GAMES, MAX_MOVES, 5])
   black_seq = tf.io.decode_raw(example['opp_player_seq'], tf.int64)
-  black_seq = tf.reshape(black_seq, [5, MAX_MOVES, 5])[0]
+  black_seq = tf.reshape(black_seq, [NUM_GAMES, MAX_MOVES, 5])
   return (
     white_seq,
     black_seq,
@@ -236,27 +237,29 @@ def create_seq_dataset(
               opp_elo,
               wdl_tensor,
             ) = parse_seq_example(raw_record)
-            white_seq_np = white_seq.numpy().view(np.uint64)   # (MAX_MOVES, 5)
-            black_seq_np = black_seq.numpy().view(np.uint64)   # (MAX_MOVES, 5)
+            white_seq_np = white_seq.numpy().view(np.uint64)   # (NUM_GAMES, MAX_MOVES, 5)
+            black_seq_np = black_seq.numpy().view(np.uint64)   # (NUM_GAMES, MAX_MOVES, 5)
             wdl_val = wdl_tensor.numpy()
 
-            white_planes = np.zeros((MAX_MOVES, SEQ_PLANES, 8, 8), dtype=np.float32)
-            black_planes = np.zeros((MAX_MOVES, SEQ_PLANES, 8, 8), dtype=np.float32)
-            white_mask = np.zeros((MAX_MOVES,), dtype=np.float32)
-            black_mask = np.zeros((MAX_MOVES,), dtype=np.float32)
+            white_planes = np.zeros((NUM_GAMES, MAX_MOVES, SEQ_PLANES, 8, 8), dtype=np.float32)
+            black_planes = np.zeros((NUM_GAMES, MAX_MOVES, SEQ_PLANES, 8, 8), dtype=np.float32)
+            white_mask = np.zeros((NUM_GAMES, MAX_MOVES), dtype=np.float32)
+            black_mask = np.zeros((NUM_GAMES, MAX_MOVES), dtype=np.float32)
 
-            for m_idx in range(MAX_MOVES):
-              struct = white_seq_np[m_idx]
-              if np.any(struct > 0):
-                p, _ = chessboard_struct_to_lc0_planes(struct, short=True)
-                white_planes[m_idx] = p.astype(np.float32)
-                white_mask[m_idx] = 1.0
-            for m_idx in range(MAX_MOVES):
-              struct = black_seq_np[m_idx]
-              if np.any(struct > 0):
-                p, _ = chessboard_struct_to_lc0_planes(struct, short=True)
-                black_planes[m_idx] = p.astype(np.float32)
-                black_mask[m_idx] = 1.0
+            for g_idx in range(NUM_GAMES):
+              for m_idx in range(MAX_MOVES):
+                struct = white_seq_np[g_idx, m_idx]
+                if np.any(struct > 0):
+                  p, _ = chessboard_struct_to_lc0_planes(struct, short=True)
+                  white_planes[g_idx, m_idx] = p.astype(np.float32)
+                  white_mask[g_idx, m_idx] = 1.0
+            for g_idx in range(NUM_GAMES):
+              for m_idx in range(MAX_MOVES):
+                struct = black_seq_np[g_idx, m_idx]
+                if np.any(struct > 0):
+                  p, _ = chessboard_struct_to_lc0_planes(struct, short=True)
+                  black_planes[g_idx, m_idx] = p.astype(np.float32)
+                  black_mask[g_idx, m_idx] = 1.0
 
             yield {
               'seq0': white_planes,
@@ -279,12 +282,12 @@ def create_seq_dataset(
 
   output_signature = (
     {
-      'seq0': tf.TensorSpec(shape=(MAX_MOVES, SEQ_PLANES, 8, 8), dtype=tf.float32),  # type: ignore
-      'seq1': tf.TensorSpec(shape=(MAX_MOVES, SEQ_PLANES, 8, 8), dtype=tf.float32),  # type: ignore
-      'mask0': tf.TensorSpec(shape=(MAX_MOVES,), dtype=tf.float32),                  # type: ignore
-      'mask1': tf.TensorSpec(shape=(MAX_MOVES,), dtype=tf.float32),                  # type: ignore
-      'raw_seq0': tf.TensorSpec(shape=(MAX_MOVES, 5), dtype=tf.int64),               # type: ignore
-      'raw_seq1': tf.TensorSpec(shape=(MAX_MOVES, 5), dtype=tf.int64),               # type: ignore
+      'seq0': tf.TensorSpec(shape=(NUM_GAMES, MAX_MOVES, SEQ_PLANES, 8, 8), dtype=tf.float32),  # type: ignore
+      'seq1': tf.TensorSpec(shape=(NUM_GAMES, MAX_MOVES, SEQ_PLANES, 8, 8), dtype=tf.float32),  # type: ignore
+      'mask0': tf.TensorSpec(shape=(NUM_GAMES, MAX_MOVES), dtype=tf.float32),                     # type: ignore
+      'mask1': tf.TensorSpec(shape=(NUM_GAMES, MAX_MOVES), dtype=tf.float32),                     # type: ignore
+      'raw_seq0': tf.TensorSpec(shape=(NUM_GAMES, MAX_MOVES, 5), dtype=tf.int64),                 # type: ignore
+      'raw_seq1': tf.TensorSpec(shape=(NUM_GAMES, MAX_MOVES, 5), dtype=tf.int64),                 # type: ignore
       'stm_player_name': tf.TensorSpec(shape=(), dtype=tf.string),                    # type: ignore
       'opp_player_name': tf.TensorSpec(shape=(), dtype=tf.string),                    # type: ignore
       'stm_player_elo': tf.TensorSpec(shape=(), dtype=tf.int64),                      # type: ignore
@@ -382,8 +385,42 @@ class GameOutcomePredictor(tf.keras.Model):
     mask1 = inputs.get('mask1', None)
 
     is_training = _training_flag(training)
-    elo0 = self.elo_predictor({'seq': seq0, 'mask': mask0}, training=is_training)
-    elo1 = self.elo_predictor({'seq': seq1, 'mask': mask1}, training=is_training)
+
+    # Predict Elo per game, then average over valid games for each player.
+    batch_size = tf.shape(seq0)[0]
+    flat_seq0 = tf.reshape(seq0, [batch_size * NUM_GAMES, MAX_MOVES, SEQ_PLANES, 8, 8])
+    flat_seq1 = tf.reshape(seq1, [batch_size * NUM_GAMES, MAX_MOVES, SEQ_PLANES, 8, 8])
+
+    flat_mask0 = None
+    flat_mask1 = None
+    if mask0 is not None:
+      flat_mask0 = tf.reshape(mask0, [batch_size * NUM_GAMES, MAX_MOVES])
+    if mask1 is not None:
+      flat_mask1 = tf.reshape(mask1, [batch_size * NUM_GAMES, MAX_MOVES])
+
+    game_elo0 = self.elo_predictor({'seq': flat_seq0, 'mask': flat_mask0}, training=is_training)
+    game_elo1 = self.elo_predictor({'seq': flat_seq1, 'mask': flat_mask1}, training=is_training)
+
+    game_elo0 = tf.reshape(game_elo0, [batch_size, NUM_GAMES])
+    game_elo1 = tf.reshape(game_elo1, [batch_size, NUM_GAMES])
+
+    if mask0 is not None:
+      game_valid0 = tf.cast(tf.reduce_any(mask0 > 0.0, axis=-1), dtype=game_elo0.dtype)
+      elo0 = tf.math.divide_no_nan(
+        tf.reduce_sum(game_elo0 * game_valid0, axis=-1),
+        tf.reduce_sum(game_valid0, axis=-1),
+      )
+    else:
+      elo0 = tf.reduce_mean(game_elo0, axis=-1)
+
+    if mask1 is not None:
+      game_valid1 = tf.cast(tf.reduce_any(mask1 > 0.0, axis=-1), dtype=game_elo1.dtype)
+      elo1 = tf.math.divide_no_nan(
+        tf.reduce_sum(game_elo1 * game_valid1, axis=-1),
+        tf.reduce_sum(game_valid1, axis=-1),
+      )
+    else:
+      elo1 = tf.reduce_mean(game_elo1, axis=-1)
 
     elo = elo0 - elo1
     # Convert elo to win/draw/loss probabilities using logistic function
@@ -432,16 +469,20 @@ class PeriodicSampleLogger(tf.keras.callbacks.Callback):
       'mask1': inputs['mask1'],
     }
 
-  def _seq_to_fens(self, raw_seq: np.ndarray, mask: np.ndarray) -> List[str]:
-    fens = []
-    for idx in range(min(raw_seq.shape[0], mask.shape[0])):
-      if mask[idx] <= 0.0:
-        continue
-      struct = raw_seq[idx].astype(np.uint64)
-      fen = chessboard_struct_to_fen_like(struct)
-      if fen:
-        fens.append(fen)
-    return fens
+  def _seq_to_fens(self, raw_seq: np.ndarray, mask: np.ndarray) -> List[List[str]]:
+    all_games_fens = []
+    max_games = min(raw_seq.shape[0], mask.shape[0])
+    for g_idx in range(max_games):
+      game_fens = []
+      for m_idx in range(min(raw_seq[g_idx].shape[0], mask[g_idx].shape[0])):
+        if mask[g_idx, m_idx] <= 0.0:
+          continue
+        struct = raw_seq[g_idx, m_idx].astype(np.uint64)
+        fen = chessboard_struct_to_fen_like(struct)
+        if fen:
+          game_fens.append(fen)
+      all_games_fens.append(game_fens)
+    return all_games_fens
 
   def on_train_batch_end(self, batch, logs=None):
     if (batch + 1) % self.interval_batches != 0:
@@ -482,8 +523,8 @@ class PeriodicSampleLogger(tf.keras.callbacks.Callback):
             'opp_player_elo': int(opp_elos[idx]),
             'pred_wdl': np.nan_to_num(pred, nan=0.0, posinf=1.0, neginf=0.0).tolist(),
             'true_wdl': np.nan_to_num(true, nan=0.0, posinf=1.0, neginf=0.0).tolist(),
-            'seq0_fens': self._seq_to_fens(raw_seq0[idx], mask0[idx]),
-            'seq1_fens': self._seq_to_fens(raw_seq1[idx], mask1[idx]),
+            'seq0_fens_by_game': self._seq_to_fens(raw_seq0[idx], mask0[idx]),
+            'seq1_fens_by_game': self._seq_to_fens(raw_seq1[idx], mask1[idx]),
           }
           handle.write(json.dumps(record) + '\n')
     except Exception as e:
@@ -551,10 +592,10 @@ def train_model(
   )
 
   model.build(input_shape={  # type: ignore
-    'seq0': (None, MAX_MOVES, SEQ_PLANES, 8, 8),
-    'seq1': (None, MAX_MOVES, SEQ_PLANES, 8, 8),
-    'mask0': (None, MAX_MOVES),
-    'mask1': (None, MAX_MOVES),
+    'seq0': (None, NUM_GAMES, MAX_MOVES, SEQ_PLANES, 8, 8),
+    'seq1': (None, NUM_GAMES, MAX_MOVES, SEQ_PLANES, 8, 8),
+    'mask0': (None, NUM_GAMES, MAX_MOVES),
+    'mask1': (None, NUM_GAMES, MAX_MOVES),
   })
 
   class LearningRateLogger(tf.keras.callbacks.Callback):
