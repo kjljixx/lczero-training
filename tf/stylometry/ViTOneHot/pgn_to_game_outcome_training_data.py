@@ -336,13 +336,14 @@ def process_pgns(
           nonlocal has_seq_pos_count, total_seq_pos_count
           num_in_0 = 0
           num_in_1 = 0
+          NUM_GAMES = 5
           if pos[0] in curr_sequences:
-            num_in_0 = min(1, len(curr_sequences[pos[0]]))
+            num_in_0 = min(NUM_GAMES, len(curr_sequences[pos[0]]))
             has_seq_pos_count += num_in_0
           if pos[1] in curr_sequences:
-            num_in_1 = min(1, len(curr_sequences[pos[1]]))
+            num_in_1 = min(NUM_GAMES, len(curr_sequences[pos[1]]))
             has_seq_pos_count += num_in_1
-          total_seq_pos_count += 10
+          total_seq_pos_count += 2*NUM_GAMES
           return (list(map(lambda x: x[0], random.sample(curr_sequences[pos[0]], num_in_0))) if pos[0] in curr_sequences else [], list(map(lambda x: x[0], random.sample(curr_sequences[pos[1]], num_in_1))) if pos[1] in curr_sequences else [], pos[2],
                   pos[3], pos[4], pos[5], pos[6])
         curr_paired_positions = map(to_paired, curr_results)
