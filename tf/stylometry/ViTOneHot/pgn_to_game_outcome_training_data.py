@@ -302,14 +302,14 @@ def process_pgns(
         break
       if game.headers["White"] == "?" or game.headers["Black"] == "?":
         continue
-      if int(game.headers.get("TimeControl", "600+0").split('+')[0]) < MIN_STARTING_TIME:
+      if game.headers.get("TimeControl", "600+0") == "-" or int(game.headers.get("TimeControl", "600+0").split('+')[0]) < MIN_STARTING_TIME:
         continue
 
       if len(list(game.mainline())) < min_moves*2:
         continue
       
-      white = player_mapper.get_index(game.headers["White"])
-      black = player_mapper.get_index(game.headers["Black"])
+      white = player_mapper.get_or_create_index(game.headers["White"])
+      black = player_mapper.get_or_create_index(game.headers["Black"])
       result = game.headers.get("Result", "*")
       rand = random.random()
       if (seq_counts.get(white, 0) < 5 or seq_counts.get(black, 0) < 5) and rand < 0.8:
@@ -428,4 +428,4 @@ if __name__ == "__main__":
   logger.info(f"Player mapping path: {args.output_prefix}/player_map.txt")
   logger.info(f"Total players: {player_mapper.num_players()}")
 
-#  python3 stylometry/WinRateStylo/pgn_to_training_data.py ../../maia-individual/data-lichess/chess/unzipped stylometry/WinRateStylo/data/run2025-12-22
+#  python3 stylometry/WinRateStylo/pgn_to_game_outcome_training_data.py stylometry/WinRateStylo/data/lichess-raw/ stylometry/ViTOneHot/data/run2026-03-25

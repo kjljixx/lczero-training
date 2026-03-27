@@ -663,4 +663,4 @@ if __name__ == "__main__":
     sample_log_count=args.sample_log_count,
     sample_log_file=args.sample_log_file,
   )
-# python3 -m stylometry.ViTOneHot.train_stylometry <data_dir>
+# python3 -m stylometry.ViTOneHot.train_stylometry stylometry/ViTOneHot/data/run2026-03-16/ --output-dir stylometry/ViTOneHot/models/run2026-03-21 --start-checkpoint stylometry/ViTOneHot/models/run2026-03-02-lr-0.00005/checkpoint_epoch_36.keras
