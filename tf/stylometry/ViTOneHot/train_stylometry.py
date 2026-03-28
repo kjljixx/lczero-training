@@ -279,8 +279,8 @@ def create_seq_dataset(
               'opp_player_elo': np.int64(opp_elo.numpy()),
             }, {
               'wdl': wdl_val.astype(np.float32),
-              'elo0': np.float32(stm_elo.numpy()),
-              'elo1': np.float32(opp_elo.numpy()),
+              'e0': np.float32(stm_elo.numpy()),
+              'e1': np.float32(opp_elo.numpy()),
             }
           except Exception as e:
             print(f"Skipping corrupted record in {shard_path}: {e}")
@@ -304,8 +304,8 @@ def create_seq_dataset(
     },
     {
       'wdl': tf.TensorSpec(shape=(3,), dtype=tf.float32),   # type: ignore
-      'elo0': tf.TensorSpec(shape=(), dtype=tf.float32),    # type: ignore
-      'elo1': tf.TensorSpec(shape=(), dtype=tf.float32),    # type: ignore
+      'e0': tf.TensorSpec(shape=(), dtype=tf.float32),      # type: ignore
+      'e1': tf.TensorSpec(shape=(), dtype=tf.float32),      # type: ignore
     }
   )
 
@@ -442,8 +442,8 @@ class GameOutcomePredictor(tf.keras.Model):
     p_draw = tf.zeros_like(p_win)  # Placeholder for draw probability
     return {
       'wdl': tf.stack([p_win, p_draw, p_loss], axis=-1),  # (batch, 3)
-      'elo0': elo0,  # (batch,)
-      'elo1': elo1,  # (batch,)
+      'e0': elo0,  # (batch,)
+      'e1': elo1,  # (batch,)
     }
 
 
@@ -513,12 +513,12 @@ class PeriodicSampleLogger(tf.keras.callbacks.Callback):
 
       if isinstance(preds_out, dict):
         preds_wdl = preds_out['wdl'].numpy()
-        preds_elo0 = preds_out['elo0'].numpy()
-        preds_elo1 = preds_out['elo1'].numpy()
+        preds_e0 = preds_out['e0'].numpy()
+        preds_e1 = preds_out['e1'].numpy()
       else:
         preds_wdl = preds_out.numpy()
-        preds_elo0 = np.full((preds_wdl.shape[0],), np.nan, dtype=np.float32)
-        preds_elo1 = np.full((preds_wdl.shape[0],), np.nan, dtype=np.float32)
+        preds_e0 = np.full((preds_wdl.shape[0],), np.nan, dtype=np.float32)
+        preds_e1 = np.full((preds_wdl.shape[0],), np.nan, dtype=np.float32)
 
       if isinstance(labels, dict):
         labels_np = labels['wdl'].numpy()
@@ -551,8 +551,8 @@ class PeriodicSampleLogger(tf.keras.callbacks.Callback):
             'opp_player_name': _decode_name(opp_names[idx]),
             'stm_player_elo': int(stm_elos[idx]),
             'opp_player_elo': int(opp_elos[idx]),
-            'pred_stm_player_elo': float(preds_elo0[idx]),
-            'pred_opp_player_elo': float(preds_elo1[idx]),
+            'pred_stm_player_elo': float(preds_e0[idx]),
+            'pred_opp_player_elo': float(preds_e1[idx]),
             'pred_wdl': np.nan_to_num(pred, nan=0.0, posinf=1.0, neginf=0.0).tolist(),
             'true_wdl': np.nan_to_num(true, nan=0.0, posinf=1.0, neginf=0.0).tolist(),
             'seq0_fens_by_game': self._seq_to_fens(raw_seq0[idx], mask0[idx]),
@@ -621,18 +621,11 @@ def train_model(
     optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
     loss={
       'wdl': tf.keras.losses.CategoricalCrossentropy(),
-      'elo0': tf.keras.losses.MeanSquaredError(),
-      'elo1': tf.keras.losses.MeanSquaredError(),
-    },
-    loss_weights={
-      'wdl': 1.0,
-      'elo0': 0.0,
-      'elo1': 0.0,
     },
     metrics={
       'wdl': ['accuracy', tf.keras.metrics.MeanSquaredError(name='mse'), tf.keras.metrics.MeanAbsoluteError(name='mae')],
-      'elo0': [tf.keras.metrics.MeanAbsoluteError(name='mae'), tf.keras.metrics.MeanSquaredError(name='mse')],
-      'elo1': [tf.keras.metrics.MeanAbsoluteError(name='mae'), tf.keras.metrics.MeanSquaredError(name='mse')],
+      'e0': [tf.keras.metrics.MeanAbsoluteError(name='mae'), tf.keras.metrics.MeanSquaredError(name='mse')],
+      'e1': [tf.keras.metrics.MeanAbsoluteError(name='mae'), tf.keras.metrics.MeanSquaredError(name='mse')],
     }
   )
 
@@ -642,6 +635,23 @@ def train_model(
     'mask0': (None, NUM_GAMES, MAX_MOVES),
     'mask1': (None, NUM_GAMES, MAX_MOVES),
   })
+
+  print("Running pre-training validation...")
+  try:
+    pre_val_metrics = model.evaluate(
+      val_dataset,
+      verbose='auto',
+      return_dict=True,
+    )
+    print("Pre-Training Validation Metrics:")
+    if isinstance(pre_val_metrics, dict):
+      for metric_name, metric_value in sorted(pre_val_metrics.items()):
+        print(f"  {metric_name}: {float(metric_value):.4f}")
+    else:
+      for idx, metric_value in enumerate(pre_val_metrics):
+        print(f"  metric_{idx}: {float(metric_value):.4f}")
+  except Exception as e:
+    print(f"Pre-training validation failed: {e}")
 
   class LearningRateLogger(tf.keras.callbacks.Callback):
     def __init__(self):
@@ -699,47 +709,47 @@ def train_model(
   train_loss = _last_metric('loss')
   train_wdl_mse = _last_metric('wdl_mse')
   train_wdl_mae = _last_metric('wdl_mae')
-  train_elo0_mae = _last_metric('elo0_mae')
-  train_elo0_mse = _last_metric('elo0_mse')
-  train_elo1_mae = _last_metric('elo1_mae')
-  train_elo1_mse = _last_metric('elo1_mse')
+  train_e0_mae = _last_metric('e0_mae', 'elo0_mae')
+  train_e0_mse = _last_metric('e0_mse', 'elo0_mse')
+  train_e1_mae = _last_metric('e1_mae', 'elo1_mae')
+  train_e1_mse = _last_metric('e1_mse', 'elo1_mse')
   if train_loss is not None:
     print(f"  Loss:       {train_loss:.2f}")
   if train_wdl_mse is not None:
     print(f"  WDL MSE:    {train_wdl_mse:.2f}")
   if train_wdl_mae is not None:
     print(f"  WDL MAE:    {train_wdl_mae:.2f}")
-  if train_elo0_mae is not None:
-    print(f"  Elo0 MAE:   {train_elo0_mae:.2f}")
-  if train_elo0_mse is not None:
-    print(f"  Elo0 MSE:   {train_elo0_mse:.2f}")
-  if train_elo1_mae is not None:
-    print(f"  Elo1 MAE:   {train_elo1_mae:.2f}")
-  if train_elo1_mse is not None:
-    print(f"  Elo1 MSE:   {train_elo1_mse:.2f}")
+  if train_e0_mae is not None:
+    print(f"  E0 MAE:     {train_e0_mae:.2f}")
+  if train_e0_mse is not None:
+    print(f"  E0 MSE:     {train_e0_mse:.2f}")
+  if train_e1_mae is not None:
+    print(f"  E1 MAE:     {train_e1_mae:.2f}")
+  if train_e1_mse is not None:
+    print(f"  E1 MSE:     {train_e1_mse:.2f}")
 
   print("Final Validation Metrics:")
   val_loss = _last_metric('val_loss')
   val_wdl_mse = _last_metric('val_wdl_mse')
   val_wdl_mae = _last_metric('val_wdl_mae')
-  val_elo0_mae = _last_metric('val_elo0_mae')
-  val_elo0_mse = _last_metric('val_elo0_mse')
-  val_elo1_mae = _last_metric('val_elo1_mae')
-  val_elo1_mse = _last_metric('val_elo1_mse')
+  val_e0_mae = _last_metric('val_e0_mae', 'val_elo0_mae')
+  val_e0_mse = _last_metric('val_e0_mse', 'val_elo0_mse')
+  val_e1_mae = _last_metric('val_e1_mae', 'val_elo1_mae')
+  val_e1_mse = _last_metric('val_e1_mse', 'val_elo1_mse')
   if val_loss is not None:
     print(f"  Loss:       {val_loss:.2f}")
   if val_wdl_mse is not None:
     print(f"  WDL MSE:    {val_wdl_mse:.2f}")
   if val_wdl_mae is not None:
     print(f"  WDL MAE:    {val_wdl_mae:.2f}")
-  if val_elo0_mae is not None:
-    print(f"  Elo0 MAE:   {val_elo0_mae:.2f}")
-  if val_elo0_mse is not None:
-    print(f"  Elo0 MSE:   {val_elo0_mse:.2f}")
-  if val_elo1_mae is not None:
-    print(f"  Elo1 MAE:   {val_elo1_mae:.2f}")
-  if val_elo1_mse is not None:
-    print(f"  Elo1 MSE:   {val_elo1_mse:.2f}")
+  if val_e0_mae is not None:
+    print(f"  E0 MAE:     {val_e0_mae:.2f}")
+  if val_e0_mse is not None:
+    print(f"  E0 MSE:     {val_e0_mse:.2f}")
+  if val_e1_mae is not None:
+    print(f"  E1 MAE:     {val_e1_mae:.2f}")
+  if val_e1_mse is not None:
+    print(f"  E1 MSE:     {val_e1_mse:.2f}")
 
   return model, history
 
