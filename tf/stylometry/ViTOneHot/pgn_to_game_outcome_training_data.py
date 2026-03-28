@@ -429,4 +429,4 @@ if __name__ == "__main__":
   logger.info(f"Player mapping path: {args.output_prefix}/player_map.txt")
   logger.info(f"Total players: {player_mapper.num_players()}")
 
-#  python3 stylometry/WinRateStylo/pgn_to_game_outcome_training_data.py stylometry/WinRateStylo/data/lichess-raw/ stylometry/ViTOneHot/data/run2026-03-25
+#  python3 stylometry/ViTOneHot/pgn_to_game_outcome_training_data.py stylometry/WinRateStylo/data/lichess-raw/ stylometry/ViTOneHot/data/run2026-03-25
