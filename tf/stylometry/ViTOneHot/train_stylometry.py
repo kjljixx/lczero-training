@@ -241,6 +241,11 @@ def create_seq_dataset(
             black_seq_np = black_seq.numpy().view(np.uint64)   # (NUM_GAMES, MAX_MOVES, 5)
             wdl_val = wdl_tensor.numpy()
 
+            white_has_games = bool(np.any(np.any(white_seq_np > 0, axis=(1, 2))))
+            black_has_games = bool(np.any(np.any(black_seq_np > 0, axis=(1, 2))))
+            if not white_has_games or not black_has_games:
+              continue
+
             white_planes = np.zeros((NUM_GAMES, MAX_MOVES, SEQ_PLANES, 8, 8), dtype=np.float32)
             black_planes = np.zeros((NUM_GAMES, MAX_MOVES, SEQ_PLANES, 8, 8), dtype=np.float32)
             white_mask = np.zeros((NUM_GAMES, MAX_MOVES), dtype=np.float32)
