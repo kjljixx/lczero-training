@@ -227,6 +227,8 @@ def create_seq_dataset(
       try:
         raw_ds = tf.data.TFRecordDataset(shard_path)
         for raw_record in raw_ds:
+          if random.random() < skip_rate:
+            continue
           try:
             (
               white_seq,
