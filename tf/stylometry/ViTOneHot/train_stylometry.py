@@ -590,7 +590,7 @@ def train_model(
   print(f"Train shards: {len(train_shards)}, Val shards: {len(val_shards)}")
 
   train_dataset = create_seq_dataset(train_shards, batch_size, shuffle=True, repeat=True)
-  val_dataset = create_seq_dataset(val_shards, batch_size, shuffle=False, repeat=False, skip_rate=0.95)
+  val_dataset = create_seq_dataset(val_shards, batch_size, shuffle=False, repeat=False, skip_rate=0.99)
 
   print("Creating model...")
 
