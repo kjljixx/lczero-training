@@ -4,6 +4,7 @@ import glob
 import argparse
 import random
 import json
+import hashlib
 from datetime import datetime
 import tensorflow as tf
 import numpy as np
@@ -226,9 +227,14 @@ def create_seq_dataset(
     for shard_path in shard_paths:
       try:
         raw_ds = tf.data.TFRecordDataset(shard_path)
-        for raw_record in raw_ds:
-          if random.random() < skip_rate:
-            continue
+        for record_idx, raw_record in enumerate(raw_ds):
+          if skip_rate > 0.0:
+            # Deterministic skip decision keeps validation subset fixed across epochs.
+            key = f"{shard_path}:{record_idx}".encode('utf-8')
+            hashed = int.from_bytes(hashlib.blake2b(key, digest_size=8).digest(), 'big')
+            keep_prob = hashed / float(2**64)
+            if keep_prob < skip_rate:
+              continue
           try:
             (
               white_seq,
