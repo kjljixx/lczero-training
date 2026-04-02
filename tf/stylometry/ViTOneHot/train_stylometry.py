@@ -445,9 +445,9 @@ class GameOutcomePredictor(tf.keras.Model):
 
     elo_diff = elo0 - elo1
     draw_margin = 21.57 # represent approx 0.062 win prob as found empirically
-    # Convert elo difference to win/draw/loss probabilities using logistic function.
-    p_win = 1 / (1 + tf.pow(10.0, (-elo_diff + draw_margin) / 400))
-    p_loss = 1 / (1 + tf.pow(10.0, (elo_diff + draw_margin) / 400))
+    # Convert elo difference to win/draw/loss probabilities using glicko 2. 0.9 represents typical rating deviation dampening
+    p_win = 1 / (1 + tf.pow(10.0, 0.9 * (-elo_diff + draw_margin) / 400))
+    p_loss = 1 / (1 + tf.pow(10.0, 0.9 * (elo_diff + draw_margin) / 400))
     p_draw = 1 - p_win - p_loss
     return {
       'w': tf.stack([p_win, p_draw, p_loss], axis=-1),  # (batch, 3)
