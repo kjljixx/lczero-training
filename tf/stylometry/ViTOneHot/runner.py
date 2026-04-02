@@ -35,29 +35,25 @@ PGN_TEXT = """
 [Event "FIDE Candidates 2026"]
 [Site "Pegeia CYP"]
 [Date "2026.03.29"]
-[Round "1.2"]
-[White "Praggnanandhaa, R"]
-[Black "Giri, Anish"]
-[Result "1-0"]
+[Round "1.3"]
+[White "Bluebaum, Matthias"]
+[Black "Wei, Yi"]
+[Result "1/2-1/2"]
 [WhiteTitle "GM"]
 [BlackTitle "GM"]
-[WhiteElo "2741"]
-[BlackElo "2753"]
-[ECO "B23"]
-[Opening "Sicilian"]
-[Variation "closed"]
-[WhiteFideId "25059530"]
-[BlackFideId "24116068"]
+[WhiteElo "2698"]
+[BlackElo "2754"]
+[ECO "D41"]
+[Opening "QGD"]
+[Variation "Semi-Tarrasch, 5.cd"]
+[WhiteFideId "24651516"]
+[BlackFideId "8603405"]
 [EventDate "2026.03.29"]
 
-1. e4 c5 2. Nc3 d6 3. f4 g6 4. Nf3 Bg7 5. Bb5+ Bd7 6. a4 Nc6 7. O-O a6 8. Bc4 e6
-9. d3 Nge7 10. f5 exf5 11. Qe1 Be6 12. exf5 gxf5 13. Bxe6 fxe6 14. Qxe6 Qd7 15.
-Qc4 O-O-O 16. Bg5 Rde8 17. Rae1 Ng6 18. Nd5 Kb8 19. Nf6 Bxf6 20. Bxf6 Rhf8 21.
-Bc3 f4 22. Rxe8+ Rxe8 23. Re1 Rf8 24. Qe6 Qxe6 25. Rxe6 Kc7 26. Ng5 Kd7 27. Re4
-Rf5 28. Nxh7 d5 29. Re2 d4 30. Be1 Nce5 31. Re4 Ng4 32. h3 Ne3 33. c3 Nd5 34. h4
-dxc3 35. bxc3 Rh5 36. Ng5 Nf6 37. Re6 Rxg5 38. Rxf6 Rg4 39. h5 Ne5 40. h6 Nf3+
-41. Kf1 Nxe1 42. Kxe1 Rxg2 43. Rxf4 Rh2 44. Rf6 Rh3 45. Kd2 Rh2+ 46. Ke3 Rh3+
-47. Ke4 c4 48. dxc4 Rxc3 49. Kf5 Ke7 50. Rb6 Rxc4 51. h7 1-0
+1. d4 Nf6 2. c4 e6 3. Nf3 d5 4. Nc3 c5 5. cxd5 cxd4 6. Qxd4 exd5 7. Bg5 Be7 8.
+e3 O-O 9. Rd1 Be6 10. Bb5 h6 11. Bh4 a6 12. Ba4 Nc6 13. Qd3 Ne4 14. Bxe7 Nxe7
+15. O-O Nxc3 16. Qxc3 Rc8 17. Qe5 Rc4 18. Bb3 Re4 19. Qc3 Bg4 20. Rd2 Bxf3 21.
+gxf3 Qd7 22. fxe4 Qg4+ 23. Kh1 Qf3+ 24. Kg1 Qg4+ 25. Kh1 Qf3+ 26. Kg1 Qg4+ 1/2-1/2
 """.strip()
 
 
