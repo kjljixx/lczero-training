@@ -444,10 +444,11 @@ class GameOutcomePredictor(tf.keras.Model):
       elo1 = tf.reduce_mean(game_elo1, axis=-1)
 
     elo_diff = elo0 - elo1
+    draw_margin = 21.57 # represent approx 0.062 win prob as found empirically
     # Convert elo difference to win/draw/loss probabilities using logistic function.
-    p_win = 1 / (1 + tf.exp(-elo_diff / 400))
-    p_loss = 1 - p_win
-    p_draw = tf.zeros_like(p_win)  # Placeholder for draw probability
+    p_win = 1 / (1 + tf.exp(-elo_diff + draw_margin / 400))
+    p_loss = 1 / (1 + tf.exp(elo_diff + draw_margin / 400))
+    p_draw = 1 - p_win - p_loss
     return {
       'w': tf.stack([p_win, p_draw, p_loss], axis=-1),  # (batch, 3)
       'e0': elo0,  # (batch,)
