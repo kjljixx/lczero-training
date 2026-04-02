@@ -35,34 +35,29 @@ PGN_TEXT = """
 [Event "FIDE Candidates 2026"]
 [Site "Pegeia CYP"]
 [Date "2026.03.29"]
-[Round "1.1"]
-[White "Caruana, Fabiano"]
-[Black "Nakamura, Hikaru"]
+[Round "1.2"]
+[White "Praggnanandhaa, R"]
+[Black "Giri, Anish"]
 [Result "1-0"]
 [WhiteTitle "GM"]
 [BlackTitle "GM"]
-[WhiteElo "2795"]
-[BlackElo "2810"]
-[ECO "A13"]
-[Opening "English opening"]
-[Variation "Agincourt variation"]
-[WhiteFideId "2020009"]
-[BlackFideId "2016192"]
+[WhiteElo "2741"]
+[BlackElo "2753"]
+[ECO "B23"]
+[Opening "Sicilian"]
+[Variation "closed"]
+[WhiteFideId "25059530"]
+[BlackFideId "24116068"]
 [EventDate "2026.03.29"]
 
-1. Nf3 d5 2. c4 e6 3. g3 d4 4. Bg2 Nc6 5. O-O Bc5 6. e3 Nge7 7. Nxd4 Nxd4 8. b4
-Bxb4 9. exd4 O-O 10. Qb3 Ba5 11. Nc3 Nf5 12. Ba3 Re8 13. d5 Nd4 14. Qa4 b6 15.
-Rae1 Bd7 16. Qd1 c5 17. Bb2 Rb8 18. a4 a6 19. dxe6 Bxe6 20. Nd5 Qd6 21. Bxd4
-cxd4 22. Re4 Bxd5 23. Rxe8+ Rxe8 24. Bxd5 Bb4 25. h4 a5 26. d3 Qf6 27. Kg2 Qe5
-28. Qf3 Qf6 29. Qg4 Bc5 30. h5 h6 31. Rh1 Qg5 32. Qd1 Qe7 33. Bc6 Rc8 34. Re1
-Qc7 35. Bd5 Kf8 36. Qg4 Rd8 37. Qe4 Kg8 38. Qf5 Qd7 39. Qf3 Rf8 40. Re5 Bd6 41.
-Rf5 Qe7 42. Qg4 Be5 43. Rf3 Bf6 44. Rf4 Qd8 45. Be4 Re8 46. Rf5 Qd7 47. Qf4 Bg5
-48. Qf3 Qc7 49. Rxf7 Qxf7 50. Bd5 Re6 51. Qg4 Kf8 52. Bxe6 Qe8 53. Bd7 Qa8+ 54.
-Kg1 Bf6 55. Qe6 Qd8 56. Bc6 Qe7 57. Qc8+ Qd8 58. Qb7 Be5 59. Bd5 Qc7 60. Qa8+
-Ke7 61. Qg8 Kd6 62. Be4 Ke7 63. Bg6 Bf6 64. Qf7+ Kd6 65. Qd5+ Ke7 66. Bf5 Be5
-67. f4 Bf6 68. Kg2 Qd6 69. Qb7+ Kf8 70. Kf3 Qe7 71. Qe4 Qxe4+ 72. dxe4 Be7 73.
-e5 Bb4 74. Bd3 Be1 75. g4 Ke7 76. Ke4 Bg3 77. f5 Kd7 78. Kd5 Bh4 79. f6 gxf6 80.
-e6+ Ke7 81. Kc6 Kxe6 82. Kxb6 Be1 83. c5 1-0
+1. e4 c5 2. Nc3 d6 3. f4 g6 4. Nf3 Bg7 5. Bb5+ Bd7 6. a4 Nc6 7. O-O a6 8. Bc4 e6
+9. d3 Nge7 10. f5 exf5 11. Qe1 Be6 12. exf5 gxf5 13. Bxe6 fxe6 14. Qxe6 Qd7 15.
+Qc4 O-O-O 16. Bg5 Rde8 17. Rae1 Ng6 18. Nd5 Kb8 19. Nf6 Bxf6 20. Bxf6 Rhf8 21.
+Bc3 f4 22. Rxe8+ Rxe8 23. Re1 Rf8 24. Qe6 Qxe6 25. Rxe6 Kc7 26. Ng5 Kd7 27. Re4
+Rf5 28. Nxh7 d5 29. Re2 d4 30. Be1 Nce5 31. Re4 Ng4 32. h3 Ne3 33. c3 Nd5 34. h4
+dxc3 35. bxc3 Rh5 36. Ng5 Nf6 37. Re6 Rxg5 38. Rxf6 Rg4 39. h5 Ne5 40. h6 Nf3+
+41. Kf1 Nxe1 42. Kxe1 Rxg2 43. Rxf4 Rh2 44. Rf6 Rh3 45. Kd2 Rh2+ 46. Ke3 Rh3+
+47. Ke4 c4 48. dxc4 Rxc3 49. Kf5 Ke7 50. Rb6 Rxc4 51. h7 1-0
 """.strip()
 
 
