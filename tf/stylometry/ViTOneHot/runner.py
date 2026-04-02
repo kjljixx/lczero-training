@@ -1,11 +1,14 @@
 import io
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
 import chess.pgn
 import numpy as np
+
+os.environ.setdefault('TF_USE_LEGACY_KERAS', '1')
 import tensorflow as tf
 
 
