@@ -32,28 +32,27 @@ from stylometry.ViTOneHot.train_stylometry import (
 CHECKPOINT_PATH = Path("stylometry/ViTOneHot/models/run2026-03-27-det-val/checkpoint_epoch_48.keras")
 
 PGN_TEXT = """
-[Event "FIDE Candidates 2026"]
-[Site "Pegeia CYP"]
-[Date "2026.03.29"]
-[Round "1.3"]
-[White "Bluebaum, Matthias"]
-[Black "Wei, Yi"]
-[Result "1/2-1/2"]
-[WhiteTitle "GM"]
-[BlackTitle "GM"]
-[WhiteElo "2698"]
-[BlackElo "2754"]
-[ECO "D41"]
-[Opening "QGD"]
-[Variation "Semi-Tarrasch, 5.cd"]
-[WhiteFideId "24651516"]
-[BlackFideId "8603405"]
-[EventDate "2026.03.29"]
+[Event "casual blitz game"]
+[Site "https://lichess.org/xxsRAcoo"]
+[Date "2023.08.26"]
+[Round "-"]
+[White "simpleEval"]
+[Black "kjljixx"]
+[Result "1-0"]
+[GameId "xxsRAcoo"]
+[UTCDate "2023.08.26"]
+[UTCTime "22:09:21"]
+[WhiteElo "2335"]
+[BlackElo "1209"]
+[WhiteTitle "BOT"]
+[Variant "Standard"]
+[TimeControl "300+3"]
+[ECO "A00"]
+[Opening "Hungarian Opening"]
+[Termination "Time forfeit"]
+[Annotator "lichess.org"]
 
-1. d4 Nf6 2. c4 e6 3. Nf3 d5 4. Nc3 c5 5. cxd5 cxd4 6. Qxd4 exd5 7. Bg5 Be7 8.
-e3 O-O 9. Rd1 Be6 10. Bb5 h6 11. Bh4 a6 12. Ba4 Nc6 13. Qd3 Ne4 14. Bxe7 Nxe7
-15. O-O Nxc3 16. Qxc3 Rc8 17. Qe5 Rc4 18. Bb3 Re4 19. Qc3 Bg4 20. Rd2 Bxf3 21.
-gxf3 Qd7 22. fxe4 Qg4+ 23. Kh1 Qf3+ 24. Kg1 Qg4+ 25. Kh1 Qf3+ 26. Kg1 Qg4+ 1/2-1/2
+1. g3 { A00 Hungarian Opening } e5 2. c4 Nf6 3. Bg2 d6 4. Nc3 Be6 5. Bxb7 Nbd7 6. Bxa8 Qxa8 7. Nf3 Bxc4 8. Qa4 Be6 9. Nb5 a6 10. Nxc7+ Kd8 11. Nxa8 Nc5 12. Qa5+ Ke8 13. b4 { White wins on time. } 1-0
 """.strip()
 
 
