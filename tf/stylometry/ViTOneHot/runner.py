@@ -26,7 +26,7 @@ from stylometry.ViTOneHot.train_stylometry import (
 )
 
 
-CHECKPOINT_PATH = "stylometry/ViTOneHot/models/run2026-03-27-det-val/checkpoint_epoch_48.keras"
+CHECKPOINT_PATH = "stylometry" / "ViTOneHot" / "models" / "run2026-03-27-det-val" / "checkpoint_epoch_48.keras"
 
 PGN_TEXT = """
 [Event "FIDE Candidates 2026"]
