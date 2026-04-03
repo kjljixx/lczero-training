@@ -382,7 +382,7 @@ class TFProcess:
             self.init_net()
 
     def init_net(self, use_heads=True):
-        self.l2reg = tf_keras.regularizers.l2(l2=0.5 * (0.0001))
+        self.l2reg = None
         input_var = tf_keras.Input(shape=(112, 8, 8))
         outputs = self.construct_net(input_var, use_heads=use_heads)
         self.model = tf_keras.Model(inputs=input_var, outputs=outputs)
