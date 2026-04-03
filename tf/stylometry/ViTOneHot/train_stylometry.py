@@ -383,6 +383,7 @@ class EloPredictor(tf.keras.Model):
     elo = self.regression_head(embedding, training=is_training)  # (batch, 1)
     return tf.squeeze(elo, axis=-1)  # (batch,)
 
+@tf.keras.utils.register_keras_serializable()
 class GameOutcomePredictor(tf.keras.Model):
   def __init__(self, elo_predictor: EloPredictor, **kwargs):
     super(GameOutcomePredictor, self).__init__(**kwargs)
