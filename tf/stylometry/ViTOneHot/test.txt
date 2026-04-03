@@ -1,0 +1,16 @@
+2026-04-02
+Changelog:
+Remove l2 reg
+Don't do start checkpoint
+Draw pcts.
+
+Pre-Training Validation Metrics: (trained on ground truth elos)
+  e0_e: 125.7558
+  e0_m: 25839.7168
+  e1_e: 124.6744
+  e1_m: 25525.9883
+  loss: 0.8467
+  w_a: 0.5378
+  w_e: 0.3475
+  w_loss: 0.8467
+  w_m: 0.1797

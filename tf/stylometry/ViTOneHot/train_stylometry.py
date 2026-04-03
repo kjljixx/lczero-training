@@ -613,8 +613,9 @@ def train_model(
   )
 
   if start_checkpoint != "":
-    elo_predictor_model = tf.keras.models.load_model(start_checkpoint)
-    model = GameOutcomePredictor(elo_predictor=elo_predictor_model)
+    # elo_predictor_model = tf.keras.models.load_model(start_checkpoint)
+    # model = GameOutcomePredictor(elo_predictor=elo_predictor_model)
+    model = tf.keras.models.load_model(start_checkpoint)
   else:
     model = GameOutcomePredictor(
       elo_predictor=EloPredictor(
