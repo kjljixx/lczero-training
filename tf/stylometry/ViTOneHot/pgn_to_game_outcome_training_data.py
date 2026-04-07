@@ -176,6 +176,101 @@ def board_to_chessboard_struct(board_history, clock_history, repetition_counts, 
 
   return np.array(structs, dtype=np.uint64)
 
+
+def board_to_chessboard_struct_player_perspective(
+  board_history,
+  clock_history,
+  repetition_counts,
+  player_color,
+  short=False
+):
+  structs = []
+
+  history_len = len(board_history)
+  max_len = 1 if short else 8
+  if history_len > max_len:
+    board_history = board_history[:max_len]
+    clock_history = clock_history[:max_len]
+    repetition_counts = repetition_counts[:max_len]
+    history_len = max_len
+
+  for hist_idx in range(history_len):
+    board = board_history[hist_idx]
+    perspective = player_color
+    pcs_1 = 0
+    pcs_2 = 0
+    is_black_perspective = perspective == chess.BLACK
+
+    occupied = board.occupied
+    if is_black_perspective:
+      occupied = _flip_vertical(occupied)
+    occ = occupied
+
+    stm_mask = board.occupied_co[perspective]
+    opp_mask = board.occupied_co[not perspective]
+
+    piece_bbs = [board.pawns, board.knights, board.bishops, board.rooks, board.queens, board.kings]
+
+    piece_vals = [0] * 64
+    for pt_idx, pbb in enumerate(piece_bbs):
+      bb = pbb & stm_mask
+      if is_black_perspective:
+        bb = _flip_vertical(bb)
+      while bb:
+        sq = (bb & -bb).bit_length() - 1
+        piece_vals[sq] = pt_idx
+        bb &= bb - 1
+
+      bb = pbb & opp_mask
+      if is_black_perspective:
+        bb = _flip_vertical(bb)
+      while bb:
+        sq = (bb & -bb).bit_length() - 1
+        piece_vals[sq] = pt_idx | 8
+        bb &= bb - 1
+
+    pcs_1_idx = 0
+    pcs_2_idx = 0
+    temp_occ = occ
+    while temp_occ:
+      sq = (temp_occ & -temp_occ).bit_length() - 1
+      val = piece_vals[sq]
+      if pcs_1_idx < 16:
+        pcs_1 |= (val << (4 * pcs_1_idx))
+        pcs_1_idx += 1
+      else:
+        pcs_2 |= (val << (4 * pcs_2_idx))
+        pcs_2_idx += 1
+      temp_occ &= temp_occ - 1
+    structs.extend([occ, pcs_1, pcs_2, clock_history[hist_idx]])
+  for _ in range(max_len - history_len):
+    structs.extend([0, 0, 0, 0])
+
+  board = board_history[0]
+  mtd = 0
+  castle_and_stm = 0
+  if board.has_queenside_castling_rights(player_color):
+    castle_and_stm |= 2
+  if board.has_kingside_castling_rights(player_color):
+    castle_and_stm |= 4
+  if board.has_queenside_castling_rights(not player_color):
+    castle_and_stm |= 8
+  if board.has_kingside_castling_rights(not player_color):
+    castle_and_stm |= 16
+
+  # In player-centric encoding, set bit 0 when it is opponent's turn to move.
+  if board.turn != player_color:
+    castle_and_stm |= 1
+
+  mtd |= castle_and_stm << 24
+  mtd |= (board.halfmove_clock & 0xFF) << 16
+
+  for idx, rep_count in enumerate(repetition_counts):
+    mtd |= min(rep_count, 3) << (2 * idx)
+  structs.append(mtd)
+
+  return np.array(structs, dtype=np.uint64)
+
 def extract_game_data(
   game: chess.pgn.Game,
   player_mapper: PlayerIndexMapper,
@@ -187,12 +282,9 @@ def extract_game_data(
   white_idx = player_mapper.get_or_create_index(white_name)
   black_idx = player_mapper.get_or_create_index(black_name)
 
-  board_history = []
-  clock_history = []
   white_clock = 600 #assume 10 minutes if not specified
   black_clock = 600
   position_hashes = []
-  repetition_counts = []
 
   board = game.board()
   result = game.headers.get("Result", "*")
@@ -203,52 +295,75 @@ def extract_game_data(
   positions = []
   positions_labels = []
 
-  for move_num, node in enumerate(game.mainline()):
-    board_copy = board.copy(stack=False)
-    board_history.insert(0, board_copy)
+  for _, node in enumerate(game.mainline()):
+    moving_color = board.turn
+    before_board = board.copy(stack=False)
 
-    pos_hash = chess.polyglot.zobrist_hash(board)
-    position_hashes.insert(0, pos_hash)
-
-    rep_count = sum(1 for h in position_hashes if h == pos_hash) - 1
-    repetition_counts.insert(0, rep_count)
-
-    if len(board_history) > 8:
-      board_history = board_history[:8]
-      clock_history = clock_history[:8]
-      position_hashes = position_hashes[:8]
-      repetition_counts = repetition_counts[:8]
-
-    if move_num >= 2:
-      board_planes = board_to_chessboard_struct(board_history, clock_history, repetition_counts)
-      if board.turn == chess.BLACK:
-        #append to BLACK
-        sequences[1].append(np.concatenate((board_planes[:4], board_planes[-1:])))
-        positions.append((white_idx, black_idx, board_planes))
-        positions_labels.append(
-          [0, 0, 1] if result == "1-0" else [1, 0, 0] if result == "0-1" else [0, 1, 0]
-        )
-      else:
-        #append to WHITE
-        sequences[0].append(np.concatenate((board_planes[:4], board_planes[-1:])))
-        positions.append((black_idx, white_idx, board_planes))
-        positions_labels.append(
-          [0, 0, 1] if result == "0-1" else [1, 0, 0] if result == "1-0" else [0, 1, 0]
-        )
+    before_hash = chess.polyglot.zobrist_hash(before_board)
+    before_rep_count = sum(1 for h in position_hashes if h == before_hash)
 
     curr_clock = node.clock()
-    if board.turn == chess.BLACK and curr_clock is not None:
+    if moving_color == chess.BLACK and curr_clock is not None:
       black_clock = int(curr_clock)
-    elif board.turn == chess.WHITE and curr_clock is not None:
+    elif moving_color == chess.WHITE and curr_clock is not None:
       white_clock = int(curr_clock)
-    if len(clock_history) == 0:
-      clock_history.insert(0, (white_clock << 32) | black_clock)
-    clock_history.insert(0, (white_clock << 32) | black_clock)
 
     board.push(node.move)
+    after_board = board.copy(stack=False)
+    after_hash = chess.polyglot.zobrist_hash(after_board)
+    after_rep_count = sum(1 for h in position_hashes if h == after_hash)
+
+    if moving_color == chess.WHITE:
+      target_seq = sequences[0]
+      player_idx = white_idx
+      opp_idx = black_idx
+    else:
+      target_seq = sequences[1]
+      player_idx = black_idx
+      opp_idx = white_idx
+
+    if len(target_seq) + 2 <= max_moves:
+      before_struct = board_to_chessboard_struct_player_perspective(
+        [before_board],
+        [(white_clock << 32) | black_clock],
+        [before_rep_count],
+        player_color=moving_color,
+        short=True,
+      )
+      after_struct = board_to_chessboard_struct_player_perspective(
+        [after_board],
+        [(white_clock << 32) | black_clock],
+        [after_rep_count],
+        player_color=moving_color,
+        short=True,
+      )
+
+      # Keep complete before/after move pairs with player-centric orientation.
+      target_seq.append(np.concatenate((before_struct[:4], before_struct[-1:])))
+      target_seq.append(np.concatenate((after_struct[:4], after_struct[-1:])))
+
+      positions.append((player_idx, opp_idx, before_struct))
+      positions_labels.append(
+        [0, 0, 1] if result == "1-0" else [1, 0, 0] if result == "0-1" else [0, 1, 0]
+      )
+      positions.append((player_idx, opp_idx, after_struct))
+      positions_labels.append(
+        [0, 0, 1] if result == "1-0" else [1, 0, 0] if result == "0-1" else [0, 1, 0]
+      )
+
+    position_hashes.insert(0, before_hash)
+    position_hashes.insert(0, after_hash)
+    if len(position_hashes) > 8:
+      position_hashes = position_hashes[:8]
 
     if len(sequences[0]) >= max_moves and len(sequences[1]) >= max_moves:
       break
+
+  # Enforce complete before/after pairs.
+  if len(sequences[0]) % 2 == 1:
+    sequences[0] = sequences[0][:-1]
+  if len(sequences[1]) % 2 == 1:
+    sequences[1] = sequences[1][:-1]
 
   return (list(zip(sequences, sequences_labels)), list(zip(positions, positions_labels)))
 

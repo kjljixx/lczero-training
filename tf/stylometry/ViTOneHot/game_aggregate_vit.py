@@ -37,6 +37,9 @@ class GameAggregateViT(tf.keras.Model):
         self.hidden_dim = hidden_dim
         self.mlp_dim = mlp_dim
         self.max_moves = max_moves
+        self.paired_max_moves = max_moves // 2
+        if max_moves % 2 != 0:
+            raise ValueError(f"max_moves must be even for before/after pairing, got {max_moves}")
 
         with open(CONFIG_FILE_PATH, 'r') as file:
             cfg = yaml.safe_load(file)
@@ -66,16 +69,18 @@ class GameAggregateViT(tf.keras.Model):
                   layers.Dense(units=self.hidden_dim, activation='relu')
               ])
         
+        self.pair_projection = layers.Dense(units=hidden_dim, activation='relu')
+
         #sin position encoding like paper recommended
         self.positional_encoding = get_sinusoidal_positional_encoding(
-            max_positions=max_moves,
+            max_positions=self.paired_max_moves,
             d_model=hidden_dim
         )
         
         # Create input specs for VisionTransformer
         # VisionTransformer expects (batch, height, width, channels) input in 4D
-        # Use max_moves as the height dimension (must be concrete, not None)
-        input_specs = tf.keras.layers.InputSpec(shape=[None, max_moves, 1, hidden_dim])
+        # Use paired_max_moves as the height dimension.
+        input_specs = tf.keras.layers.InputSpec(shape=[None, self.paired_max_moves, 1, hidden_dim])
         
         self.vit = tfm.vision.backbones.VisionTransformer(
             num_layers=num_layers,
@@ -87,36 +92,55 @@ class GameAggregateViT(tf.keras.Model):
         )
     
     def call(self, inputs, training=None, mask=None):
-      move_features = inputs  # (batch, num_moves, 21, 8, 8)
-      batch_size = tf.shape(move_features)[0]
-      num_moves = tf.shape(move_features)[1]
-      d_type = move_features.dtype
-      
-      moves_reshaped = tf.reshape(move_features, [-1, 21, 8, 8])  # (batch*num_moves, 21, 8, 8)
-      moves_reshaped = tf.concat([moves_reshaped[:, :13], tf.zeros((batch_size*num_moves, 91, 8, 8), dtype=d_type), moves_reshaped[:, -8:]], axis=1) # (batch*num_moves, 112, 8, 8)
-      move_embeddings = self.move_projection(moves_reshaped, training=training)  # (batch*num_moves, filters, 8, 8)
+        move_features = inputs  # (batch, num_moves, 21, 8, 8)
+        batch_size = tf.shape(move_features)[0]
+        num_moves = tf.shape(move_features)[1]
+        d_type = move_features.dtype
 
-      move_embeddings = tf.reshape(move_embeddings, [-1, self.hidden_dim]) # (batch*num_moves, hidden_dim)
+        moves_reshaped = tf.reshape(move_features, [-1, 21, 8, 8])  # (batch*num_moves, 21, 8, 8)
+        moves_reshaped = tf.concat([
+            moves_reshaped[:, :13],
+            tf.zeros((batch_size * num_moves, 91, 8, 8), dtype=d_type),
+            moves_reshaped[:, -8:]
+        ], axis=1)  # (batch*num_moves, 112, 8, 8)
+        move_embeddings = self.move_projection(moves_reshaped, training=training)
 
-      x = tf.reshape(move_embeddings, [batch_size, num_moves, self.hidden_dim]) # (batch, num_moves, hidden_dim)
+        move_embeddings = tf.reshape(move_embeddings, [-1, self.hidden_dim])
+        x = tf.reshape(move_embeddings, [batch_size, num_moves, self.hidden_dim])
 
-      positions = self.positional_encoding[:num_moves, :]
-      x = x + positions
-      
-      # Reshape to 4D for VisionTransformer: (batch, num_moves, 1, hidden_dim)
-      x = tf.expand_dims(x, axis=2)  # (batch, num_moves, 1, hidden_dim)
-      x = self.vit(x, training=training, mask=mask)
-      
-      # Reshape back to 3D: (batch, num_moves, hidden_dim)
-      x = tf.squeeze(x['pre_logits'], axis=2)  # (batch, num_moves, hidden_dim)
-      
-      if mask is not None:
-          mask_expanded = tf.expand_dims(tf.cast(mask, dtype=x.dtype), axis=-1)
-          x_masked = x * mask_expanded
-          aggregated = tf.math.divide_no_nan(tf.reduce_sum(x_masked, axis=1), tf.reduce_sum(mask_expanded, axis=1))
-      else:
-          aggregated = tf.reduce_mean(x, axis=1)
-      return aggregated
+        x_even = x[:, 0::2, :]
+        x_odd = x[:, 1::2, :]
+        pair_count = tf.minimum(tf.shape(x_even)[1], tf.shape(x_odd)[1])
+        x_even = x_even[:, :pair_count, :]
+        x_odd = x_odd[:, :pair_count, :]
+        x = tf.concat([x_even, x_odd], axis=-1)
+        x = self.pair_projection(x)
+
+        pair_mask = None
+        if mask is not None:
+            mask_even = tf.cast(mask[:, 0::2], dtype=x.dtype)
+            mask_odd = tf.cast(mask[:, 1::2], dtype=x.dtype)
+            mask_even = mask_even[:, :pair_count]
+            mask_odd = mask_odd[:, :pair_count]
+            pair_mask = tf.minimum(mask_even, mask_odd)
+
+        positions = self.positional_encoding[:pair_count, :]
+        x = x + positions
+
+        x = tf.expand_dims(x, axis=2)  # (batch, num_pairs, 1, hidden_dim)
+        x = self.vit(x, training=training, mask=pair_mask)
+        x = tf.squeeze(x['pre_logits'], axis=2)  # (batch, num_pairs, hidden_dim)
+
+        if pair_mask is not None:
+            mask_expanded = tf.expand_dims(tf.cast(pair_mask, dtype=x.dtype), axis=-1)
+            x_masked = x * mask_expanded
+            aggregated = tf.math.divide_no_nan(
+                tf.reduce_sum(x_masked, axis=1),
+                tf.reduce_sum(mask_expanded, axis=1)
+            )
+        else:
+            aggregated = tf.reduce_mean(x, axis=1)
+        return aggregated
     
     def model(self):
         x = tf.keras.Input(shape=(self.max_moves, self.move_feature_dim))
