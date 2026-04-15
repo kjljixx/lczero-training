@@ -112,6 +112,7 @@ def _predict_player_elos(
 	)
 	flat_mask = None
 	print("mask shape", mask.shape if mask is not None else None)
+	print("batch size", batch_size)
 	if mask is not None:
 		flat_mask = tf.reshape(mask, [batch_size * NUM_GAMES, MAX_MOVES])
 
@@ -241,6 +242,8 @@ def evaluate(
 			)
 			print('Running per-bin accuracy (actual bin denominator):')
 			print(format_per_bin(running_bin_acc, running_counts))
+			print('Running confusion matrix (rows=actual, cols=predicted):')
+			print(format_confusion(running_confusion))
 
 	if not actual_elos:
 		raise ValueError('No evaluation samples were produced from the provided TFRecords.')
