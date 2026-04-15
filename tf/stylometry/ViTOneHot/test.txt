@@ -14,3 +14,5 @@ Pre-Training Validation Metrics: (trained on ground truth elos) (run2026-03-02-l
   w_e: 0.3475
   w_loss: 0.8467
   w_m: 0.1797
+
+Best no ground truth model: run2026-04-07-lr-0.000025 epoch 32
