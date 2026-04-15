@@ -220,7 +220,26 @@ def evaluate(
 		actual_elos.extend(actual_e1_np.tolist())
 
 		if progress_every > 0 and (batch_idx + 1) % progress_every == 0:
-			print(f'Processed {batch_idx + 1} batches ({len(actual_elos)} player-samples).')
+			running_actual = np.asarray(actual_elos, dtype=np.float64)
+			running_pred = np.asarray(predicted_elos, dtype=np.float64)
+
+			running_shift = float(np.mean(running_actual) - np.mean(running_pred))
+			running_pred_norm = running_pred + running_shift
+
+			running_actual_bins = bin_all(running_actual)
+			running_pred_bins = bin_all(running_pred_norm)
+
+			running_confusion = compute_confusion(running_actual_bins, running_pred_bins)
+			running_bin_acc = per_bin_accuracy(running_confusion)
+			running_counts = running_confusion.sum(axis=1)
+			running_overall = float(np.mean(running_actual_bins == running_pred_bins))
+
+			print(
+				f'Processed {batch_idx + 1} batches ({len(actual_elos)} player-samples). '
+				f'shift={running_shift:.3f} overall_bin_acc={running_overall:.4f}'
+			)
+			print('Running per-bin accuracy (actual bin denominator):')
+			print(format_per_bin(running_bin_acc, running_counts))
 
 	if not actual_elos:
 		raise ValueError('No evaluation samples were produced from the provided TFRecords.')
