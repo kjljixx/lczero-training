@@ -111,10 +111,8 @@ def _predict_player_elos(
 		[batch_size * NUM_GAMES, MAX_MOVES, SEQ_PLANES, 8, 8],
 	)
 	flat_mask = None
-	print("mask shape", mask.shape if mask is not None else None)
-	print("batch size", batch_size)
 	if mask is not None:
-		flat_mask = tf.reshape(mask, [batch_size * NUM_GAMES, MAX_MOVES])
+		flat_mask = tf.reshape(mask, [-1, MAX_MOVES])
 
 	game_elo = elo_predictor({'seq': flat_seq, 'mask': flat_mask}, training=False)
 	game_elo = tf.reshape(game_elo, [batch_size, NUM_GAMES])
