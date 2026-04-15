@@ -4,7 +4,7 @@ Remove l2 reg
 Don't do start checkpoint
 Draw pcts.
 
-Pre-Training Validation Metrics: (trained on ground truth elos)
+Pre-Training Validation Metrics: (trained on ground truth elos) (run2026-03-02-lr-0.00005 epoch 18)
   e0_e: 125.7558
   e0_m: 25839.7168
   e1_e: 124.6744
