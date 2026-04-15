@@ -111,7 +111,6 @@ def _predict_player_elos(
 		[batch_size * NUM_GAMES, MAX_MOVES, SEQ_PLANES, 8, 8],
 	)
 	flat_mask = None
-	print("mask shape", mask.shape if mask is not None else None)
 	if mask is not None:
 		flat_mask = tf.reshape(mask, [batch_size * NUM_GAMES, MAX_MOVES])
 
