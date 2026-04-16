@@ -56,6 +56,11 @@ def parse_args() -> argparse.Namespace:
 											help='Optional output path for JSON summary.')
 	parser.add_argument('--progress-every', type=int, default=50,
 											help='Print progress every N batches.')
+	parser.add_argument(
+		'--rescale-predictions',
+		action='store_true',
+		help='Also match predicted Elo standard deviation to data (applies scale + shift).',
+	)
 	return parser.parse_args()
 
 
@@ -174,12 +179,32 @@ def format_per_bin(acc_by_bin: np.ndarray, counts: np.ndarray) -> str:
 	return '\n'.join(lines)
 
 
+def normalize_predictions(
+	actual: np.ndarray,
+	predicted: np.ndarray,
+	rescale_predictions: bool,
+) -> Tuple[np.ndarray, float, float]:
+	actual_mean = float(np.mean(actual))
+	pred_mean = float(np.mean(predicted))
+
+	scale = 1.0
+	if rescale_predictions:
+		actual_std = float(np.std(actual))
+		pred_std = float(np.std(predicted))
+		if pred_std > 0.0:
+			scale = actual_std / pred_std
+
+	shift = actual_mean - (pred_mean * scale)
+	return predicted * scale + shift, float(scale), float(shift)
+
+
 def evaluate(
 	elo_predictor: EloPredictor,
 	shard_paths: Sequence[str],
 	batch_size: int,
 	max_batches: int,
 	progress_every: int,
+	rescale_predictions: bool,
 ) -> Dict[str, object]:
 	dataset = create_seq_dataset(
 		list(shard_paths),
@@ -223,8 +248,11 @@ def evaluate(
 			running_actual = np.asarray(actual_elos, dtype=np.float64)
 			running_pred = np.asarray(predicted_elos, dtype=np.float64)
 
-			running_shift = float(np.mean(running_actual) - np.mean(running_pred))
-			running_pred_norm = running_pred + running_shift
+			running_pred_norm, running_scale, running_shift = normalize_predictions(
+				running_actual,
+				running_pred,
+				rescale_predictions,
+			)
 
 			running_actual_bins = bin_all(running_actual)
 			running_pred_bins = bin_all(running_pred_norm)
@@ -236,7 +264,8 @@ def evaluate(
 
 			print(
 				f'Processed {batch_idx + 1} batches ({len(actual_elos)} player-samples). '
-				f'shift={running_shift:.3f} overall_bin_acc={running_overall:.4f}'
+				f'scale={running_scale:.6f} shift={running_shift:.3f} '
+				f'overall_bin_acc={running_overall:.4f}'
 			)
 			print('Running per-bin accuracy (actual bin denominator):')
 			print(format_per_bin(running_bin_acc, running_counts))
@@ -251,8 +280,11 @@ def evaluate(
 
 	actual_mean = float(np.mean(actual_arr))
 	pred_mean = float(np.mean(pred_arr))
-	mean_shift = actual_mean - pred_mean
-	norm_pred_arr = pred_arr + mean_shift
+	norm_pred_arr, pred_scale, mean_shift = normalize_predictions(
+		actual_arr,
+		pred_arr,
+		rescale_predictions,
+	)
 	norm_pred_mean = float(np.mean(norm_pred_arr))
 
 	actual_bins = bin_all(actual_arr)
@@ -266,8 +298,10 @@ def evaluate(
 
 	return {
 		'sample_count': int(actual_arr.shape[0]),
+		'rescale_predictions': bool(rescale_predictions),
 		'actual_mean_elo': actual_mean,
 		'raw_pred_mean_elo': pred_mean,
+		'applied_pred_scale': float(pred_scale),
 		'applied_mean_shift': float(mean_shift),
 		'normalized_pred_mean_elo': norm_pred_mean,
 		'overall_bin_accuracy': overall_accuracy,
@@ -289,8 +323,10 @@ def print_summary(model_kind: str, shard_count: int, result: Dict[str, object]) 
 	print(f'Model kind: {model_kind}')
 	print(f'Shard count: {shard_count}')
 	print(f"Player samples: {result['sample_count']}")
+	print(f"Rescale predictions: {result['rescale_predictions']}")
 	print(f"Actual mean Elo: {result['actual_mean_elo']:.3f}")
 	print(f"Raw predicted mean Elo: {result['raw_pred_mean_elo']:.3f}")
+	print(f"Applied prediction scale: {result['applied_pred_scale']:.6f}")
 	print(f"Applied mean shift: {result['applied_mean_shift']:.3f}")
 	print(f"Normalized predicted mean Elo: {result['normalized_pred_mean_elo']:.3f}")
 	print(f"Overall bin accuracy: {result['overall_bin_accuracy']:.4f}")
@@ -329,6 +365,7 @@ def main() -> None:
 		batch_size=args.batch_size,
 		max_batches=args.max_batches,
 		progress_every=args.progress_every,
+		rescale_predictions=args.rescale_predictions,
 	)
 
 	print_summary(model_kind, len(shard_paths), result)
@@ -338,9 +375,11 @@ def main() -> None:
 			'model_path': args.model_path,
 			'data_dir': args.data_dir,
 			'model_kind': model_kind,
+			'rescale_predictions': bool(args.rescale_predictions),
 			**result,
 		})
 
 
 if __name__ == '__main__':
 	main()
+# python3 stylometry/ViTOneHot/get_bin_accuracy.py stylometry/ViTOneHot/models/run2026-04-07-lr-0.000025/checkpoint_epoch_32.keras stylometry/ViTOneHot/data/run2026-04-06/
