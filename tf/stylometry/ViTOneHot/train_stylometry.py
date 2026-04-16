@@ -631,10 +631,10 @@ def train_model(
   model.compile(
     optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
     loss={
-      'w': tf.keras.losses.CategoricalCrossentropy(),
+      'e0': tf.keras.losses.MeanSquaredError(),
+      'e1': tf.keras.losses.MeanSquaredError(),
     },
     metrics={
-      'w': [tf.keras.metrics.CategoricalAccuracy(name='a'), tf.keras.metrics.MeanSquaredError(name='m'), tf.keras.metrics.MeanAbsoluteError(name='e')],
       'e0': [tf.keras.metrics.MeanAbsoluteError(name='e'), tf.keras.metrics.MeanSquaredError(name='m')],
       'e1': [tf.keras.metrics.MeanAbsoluteError(name='e'), tf.keras.metrics.MeanSquaredError(name='m')],
     }
