@@ -255,6 +255,7 @@ def evaluate(
 
 	predicted_elos: List[float] = []
 	actual_elos: List[float] = []
+	actual_pair_abs_diffs: List[float] = []
 
 	for batch_idx, (inputs, _labels) in enumerate(dataset):
 		if max_batches > 0 and batch_idx >= max_batches:
@@ -277,11 +278,13 @@ def evaluate(
 		pred_e1_np = np.asarray(pred_e1, dtype=np.float64).reshape(-1)
 		actual_e0_np = np.asarray(actual_e0, dtype=np.float64).reshape(-1)
 		actual_e1_np = np.asarray(actual_e1, dtype=np.float64).reshape(-1)
+		actual_pair_abs_diff_np = np.abs(actual_e0_np - actual_e1_np)
 
 		predicted_elos.extend(pred_e0_np.tolist())
 		predicted_elos.extend(pred_e1_np.tolist())
 		actual_elos.extend(actual_e0_np.tolist())
 		actual_elos.extend(actual_e1_np.tolist())
+		actual_pair_abs_diffs.extend(actual_pair_abs_diff_np.tolist())
 
 		if progress_every > 0 and (batch_idx + 1) % progress_every == 0:
 			running_actual = np.asarray(actual_elos, dtype=np.float64)
@@ -289,6 +292,7 @@ def evaluate(
 			running_error_raw = running_pred - running_actual
 			running_mae_raw = float(np.mean(np.abs(running_error_raw)))
 			running_mse_raw = float(np.mean(np.square(running_error_raw)))
+			running_actual_pair_abs_diff_mean = float(np.mean(np.asarray(actual_pair_abs_diffs, dtype=np.float64)))
 
 			running_pred_norm, running_scale, running_shift = normalize_predictions(
 				running_actual,
@@ -311,6 +315,7 @@ def evaluate(
 				f'Processed {batch_idx + 1} batches ({len(actual_elos)} player-samples). '
 				f'scale={running_scale:.6f} shift={running_shift:.3f} '
 				f'overall_bin_acc={running_overall:.4f} '
+				f'actual_pair_mean_abs_diff={running_actual_pair_abs_diff_mean:.3f} '
 				f'raw_mae={running_mae_raw:.3f} raw_mse={running_mse_raw:.3f} '
 				f'norm_mae={running_mae_norm:.3f} norm_mse={running_mse_norm:.3f}'
 			)
@@ -336,6 +341,7 @@ def evaluate(
 	raw_error = pred_arr - actual_arr
 	raw_mae = float(np.mean(np.abs(raw_error)))
 	raw_mse = float(np.mean(np.square(raw_error)))
+	actual_pair_mean_abs_diff = float(np.mean(np.asarray(actual_pair_abs_diffs, dtype=np.float64)))
 	norm_error = norm_pred_arr - actual_arr
 	norm_mae = float(np.mean(np.abs(norm_error)))
 	norm_mse = float(np.mean(np.square(norm_error)))
@@ -359,6 +365,7 @@ def evaluate(
 		'normalized_pred_mean_elo': norm_pred_mean,
 		'raw_prediction_mae': raw_mae,
 		'raw_prediction_mse': raw_mse,
+		'actual_pair_mean_abs_elo_diff': actual_pair_mean_abs_diff,
 		'normalized_prediction_mae': norm_mae,
 		'normalized_prediction_mse': norm_mse,
 		'overall_bin_accuracy': overall_accuracy,
@@ -386,6 +393,7 @@ def print_summary(model_kind: str, shard_count: int, result: Dict[str, object]) 
 	print(f"Applied prediction scale: {result['applied_pred_scale']:.6f}")
 	print(f"Applied mean shift: {result['applied_mean_shift']:.3f}")
 	print(f"Normalized predicted mean Elo: {result['normalized_pred_mean_elo']:.3f}")
+	print(f"Actual mean |elo0 - elo1|: {result['actual_pair_mean_abs_elo_diff']:.3f}")
 	print(f"Raw prediction MAE: {result['raw_prediction_mae']:.3f}")
 	print(f"Raw prediction MSE: {result['raw_prediction_mse']:.3f}")
 	print(f"Normalized prediction MAE: {result['normalized_prediction_mae']:.3f}")

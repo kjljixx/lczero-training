@@ -16,3 +16,95 @@ Pre-Training Validation Metrics: (trained on ground truth elos) (run2026-03-02-l
   w_m: 0.1797
 
 Best no ground truth model: run2026-04-07-lr-0.000025 epoch 32
+
+run2026-04-07-lr-0.000025 epoch 32 w/ scaling:
+Processed 750 batches (12000 player-samples). scale=5.078984 shift=2776.823 overall_bin_acc=0.3535 raw_mae=1871.457 raw_mse=3565532.523 norm_mae=177.073 norm_mse=50219.219
+Running per-bin accuracy (actual bin denominator):
+bin        count  accuracy
+1000-1199    762    0.3963
+1200-1399   1586    0.3222
+1400-1599   2781    0.3596
+1600-1799   3191    0.3685
+1800-1999   2392    0.3884
+2000-2199    969    0.2921
+2200-2399    255    0.1529
+2400-2599     64    0.0312
+Running confusion matrix (rows=actual, cols=predicted):
+actual\pred  1000-1199  1200-1399  1400-1599  1600-1799  1800-1999  2000-2199  2200-2399  2400-2599
+1000-1199          302        242        151         56         10          1          0          0
+1200-1399          295        511        522        212         40          5          0          1
+1400-1599          132        579       1000        731        305         31          3          0
+1600-1799           44        213        810       1176        726        198         22          2
+1800-1999            4         22        256        694        929        423         63          1
+2000-2199            0          3         29        192        361        283         86         15
+2200-2399            0          0          4         18         95         95         39          4
+2400-2599            0          0          0          3          9         33         17          2
+
+run2026-04-07-lr0.000025 epoch 32 w/o scaling:
+Processed 250 batches (4000 player-samples). scale=1.000000 shift=1856.999 overall_bin_acc=0.3202 raw_mae=1856.999 raw_mse=3509269.311 norm_mae=195.801 norm_mse=60824.870
+Running per-bin accuracy (actual bin denominator):
+bin        count  accuracy
+1000-1199    263    0.0000
+1200-1399    587    0.0000
+1400-1599    982    0.3890
+1600-1799   1054    0.8529
+1800-1999    728    0.0000
+2000-2199    296    0.0000
+2200-2399     73    0.0000
+2400-2599     17    0.0000
+Running confusion matrix (rows=actual, cols=predicted):
+actual\pred  1000-1199  1200-1399  1400-1599  1600-1799  1800-1999  2000-2199  2200-2399  2400-2599
+1000-1199            0          0        211         52          0          0          0          0
+1200-1399            0          0        377        209          1          0          0          0
+1400-1599            0          0        382        600          0          0          0          0
+1600-1799            0          0        155        899          0          0          0          0
+1800-1999            0          0         23        705          0          0          0          0
+2000-2199            0          0          2        293          1          0          0          0
+2200-2399            0          0          0         71          2          0          0          0
+2400-2599            0          0          0         17          0          0          0          0
+
+run2026-04-07-elo epoch 2 (ground truth) w/ scaling:
+Processed 100 batches (1600 player-samples). scale=1.318805 shift=-569.121 overall_bin_acc=0.3906 raw_mae=152.100 raw_mse=36308.596 norm_mae=156.957 norm_mse=39216.441
+Running per-bin accuracy (actual bin denominator):
+bin        count  accuracy
+1000-1199    141    0.4468
+1200-1399    238    0.4622
+1400-1599    397    0.4106
+1600-1799    392    0.3520
+1800-1999    291    0.3746
+2000-2199    114    0.3246
+2200-2399     24    0.2083
+2400-2599      3    0.0000
+Running confusion matrix (rows=actual, cols=predicted):
+actual\pred  1000-1199  1200-1399  1400-1599  1600-1799  1800-1999  2000-2199  2200-2399  2400-2599
+1000-1199           63         57         18          2          1          0          0          0
+1200-1399           41        110         74         11          2          0          0          0
+1400-1599           16         88        163        100         28          2          0          0
+1600-1799            5         25         84        138        113         23          4          0
+1800-1999            2          2         37         86        109         50          5          0
+2000-2199            0          0          3         28         35         37         11          0
+2200-2399            0          0          0          2          9          8          5          0
+2400-2599            0          0          0          1          0          1          1          0
+
+run2026-04-07-elo epoch 2 (ground truth) w/o scaling:
+Processed 500 batches (8000 player-samples). scale=1.000000 shift=-33.473 overall_bin_acc=0.4158 raw_mae=147.375 raw_mse=34576.274 norm_mae=144.230 norm_mse=33455.813
+Running per-bin accuracy (actual bin denominator):
+bin        count  accuracy
+1000-1199    491    0.0978
+1200-1399   1064    0.4201
+1400-1599   1950    0.4831
+1600-1799   2155    0.4854
+1800-1999   1525    0.4636
+2000-2199    625    0.2176
+2200-2399    152    0.0000
+2400-2599     38    0.0000
+Running confusion matrix (rows=actual, cols=predicted):
+actual\pred  1000-1199  1200-1399  1400-1599  1600-1799  1800-1999  2000-2199  2200-2399  2400-2599
+1000-1199           48        304        126         11          2          0          0          0
+1200-1399           19        447        468        125          5          0          0          0
+1400-1599            2        297        942        619         82          6          2          0
+1600-1799            2         62        544       1046        469         32          0          0
+1800-1999            1          7        119        609        707         82          0          0
+2000-2199            0          0          8        146        335        136          0          0
+2200-2399            0          0          0         20         78         54          0          0
+2400-2599            0          0          0          2         14         22          0          0
