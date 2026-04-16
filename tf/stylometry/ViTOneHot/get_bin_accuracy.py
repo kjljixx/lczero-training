@@ -29,16 +29,14 @@ from stylometry.ViTOneHot.train_stylometry import (
 
 
 BIN_LABELS = [
-	'<1100',
-	'1100-1200',
-	'1200-1300',
-	'1300-1400',
-	'1400-1500',
-	'1500-1600',
-	'1600-1700',
-	'1700-1800',
-	'1800-1900',
-	'>1900',
+	'1000-1199',
+	'1200-1399',
+	'1400-1599',
+	'1600-1799',
+	'1800-1999',
+	'2000-2199',
+	'2200-2399',
+	'2400-2599',
 ]
 BIN_COUNT = len(BIN_LABELS)
 
@@ -134,12 +132,11 @@ def _predict_player_elos(
 
 
 def elo_to_bin_index(elo: float) -> int:
-	if elo < 1100.0:
-		return 0
-	if elo > 1900.0:
-		return 9
-	idx = int((elo - 1100.0) // 100.0) + 1
-	return max(1, min(8, idx))
+	min_elo = 1000.0
+	bin_width = 200.0
+	max_index = BIN_COUNT - 1
+	idx = int((elo - min_elo) // bin_width)
+	return max(0, min(max_index, idx))
 
 
 def bin_all(elos: Iterable[float]) -> np.ndarray:
@@ -162,20 +159,62 @@ def per_bin_accuracy(confusion: np.ndarray) -> np.ndarray:
 
 
 def format_confusion(confusion: np.ndarray) -> str:
-	header_cells = ['actual\\pred'] + BIN_LABELS
-	lines = ['\t'.join(header_cells)]
-	for row_idx, row in enumerate(confusion):
-		row_cells = [BIN_LABELS[row_idx]] + [str(int(v)) for v in row]
-		lines.append('\t'.join(row_cells))
+	row_headers = BIN_LABELS
+	col_headers = BIN_LABELS
+
+	string_rows = [
+		[str(int(v)) for v in row]
+		for row in confusion
+	]
+
+	first_col_width = max(len('actual\\pred'), max(len(label) for label in row_headers))
+	value_col_widths: List[int] = []
+	for col_idx, col_header in enumerate(col_headers):
+		col_values = [row[col_idx] for row in string_rows]
+		value_col_widths.append(max(len(col_header), max(len(v) for v in col_values)))
+
+	header = (
+		'actual\\pred'.ljust(first_col_width)
+		+ '  '
+		+ '  '.join(
+			col_header.rjust(value_col_widths[col_idx])
+			for col_idx, col_header in enumerate(col_headers)
+		)
+	)
+
+	lines = [header]
+	for row_idx, row_label in enumerate(row_headers):
+		line = (
+			row_label.ljust(first_col_width)
+			+ '  '
+			+ '  '.join(
+				string_rows[row_idx][col_idx].rjust(value_col_widths[col_idx])
+				for col_idx in range(BIN_COUNT)
+			)
+		)
+		lines.append(line)
+
 	return '\n'.join(lines)
 
 
 def format_per_bin(acc_by_bin: np.ndarray, counts: np.ndarray) -> str:
-	lines = ['bin\tcount\taccuracy']
+	count_strings = [str(int(v)) for v in counts]
+	acc_strings = [
+		'nan' if np.isnan(acc_by_bin[idx]) else f'{acc_by_bin[idx]:.4f}'
+		for idx in range(BIN_COUNT)
+	]
+
+	bin_width = max(len('bin'), max(len(label) for label in BIN_LABELS))
+	count_width = max(len('count'), max(len(v) for v in count_strings))
+	acc_width = max(len('accuracy'), max(len(v) for v in acc_strings))
+
+	lines = [
+		f"{'bin'.ljust(bin_width)}  {'count'.rjust(count_width)}  {'accuracy'.rjust(acc_width)}"
+	]
 	for idx, label in enumerate(BIN_LABELS):
-		acc = acc_by_bin[idx]
-		acc_str = 'nan' if np.isnan(acc) else f'{acc:.4f}'
-		lines.append(f'{label}\t{int(counts[idx])}\t{acc_str}')
+		lines.append(
+			f"{label.ljust(bin_width)}  {count_strings[idx].rjust(count_width)}  {acc_strings[idx].rjust(acc_width)}"
+		)
 	return '\n'.join(lines)
 
 
