@@ -292,7 +292,9 @@ def evaluate(
 			running_error_raw = running_pred - running_actual
 			running_mae_raw = float(np.mean(np.abs(running_error_raw)))
 			running_mse_raw = float(np.mean(np.square(running_error_raw)))
-			running_actual_pair_abs_diff_mean = float(np.mean(np.asarray(actual_pair_abs_diffs, dtype=np.float64)))
+			running_pair_abs_arr = np.asarray(actual_pair_abs_diffs, dtype=np.float64)
+			running_actual_pair_abs_diff_mean = float(np.mean(running_pair_abs_arr))
+			running_q25, running_q50, running_q75 = np.quantile(running_pair_abs_arr, [0.25, 0.5, 0.75])
 
 			running_pred_norm, running_scale, running_shift = normalize_predictions(
 				running_actual,
@@ -316,6 +318,9 @@ def evaluate(
 				f'scale={running_scale:.6f} shift={running_shift:.3f} '
 				f'overall_bin_acc={running_overall:.4f} '
 				f'actual_pair_mean_abs_diff={running_actual_pair_abs_diff_mean:.3f} '
+				f'actual_pair_abs_diff_q25={running_q25:.3f} '
+				f'actual_pair_abs_diff_q50={running_q50:.3f} '
+				f'actual_pair_abs_diff_q75={running_q75:.3f} '
 				f'raw_mae={running_mae_raw:.3f} raw_mse={running_mse_raw:.3f} '
 				f'norm_mae={running_mae_norm:.3f} norm_mse={running_mse_norm:.3f}'
 			)
@@ -341,7 +346,9 @@ def evaluate(
 	raw_error = pred_arr - actual_arr
 	raw_mae = float(np.mean(np.abs(raw_error)))
 	raw_mse = float(np.mean(np.square(raw_error)))
-	actual_pair_mean_abs_diff = float(np.mean(np.asarray(actual_pair_abs_diffs, dtype=np.float64)))
+	actual_pair_abs_arr = np.asarray(actual_pair_abs_diffs, dtype=np.float64)
+	actual_pair_mean_abs_diff = float(np.mean(actual_pair_abs_arr))
+	actual_pair_q25, actual_pair_q50, actual_pair_q75 = np.quantile(actual_pair_abs_arr, [0.25, 0.5, 0.75])
 	norm_error = norm_pred_arr - actual_arr
 	norm_mae = float(np.mean(np.abs(norm_error)))
 	norm_mse = float(np.mean(np.square(norm_error)))
@@ -366,6 +373,9 @@ def evaluate(
 		'raw_prediction_mae': raw_mae,
 		'raw_prediction_mse': raw_mse,
 		'actual_pair_mean_abs_elo_diff': actual_pair_mean_abs_diff,
+		'actual_pair_abs_elo_diff_q25': float(actual_pair_q25),
+		'actual_pair_abs_elo_diff_q50': float(actual_pair_q50),
+		'actual_pair_abs_elo_diff_q75': float(actual_pair_q75),
 		'normalized_prediction_mae': norm_mae,
 		'normalized_prediction_mse': norm_mse,
 		'overall_bin_accuracy': overall_accuracy,
@@ -394,6 +404,7 @@ def print_summary(model_kind: str, shard_count: int, result: Dict[str, object]) 
 	print(f"Applied mean shift: {result['applied_mean_shift']:.3f}")
 	print(f"Normalized predicted mean Elo: {result['normalized_pred_mean_elo']:.3f}")
 	print(f"Actual mean |elo0 - elo1|: {result['actual_pair_mean_abs_elo_diff']:.3f}")
+	print(f"Actual |elo0 - elo1| quartiles (Q1/Q2/Q3): {result['actual_pair_abs_elo_diff_q25']:.3f} / {result['actual_pair_abs_elo_diff_q50']:.3f} / {result['actual_pair_abs_elo_diff_q75']:.3f}")
 	print(f"Raw prediction MAE: {result['raw_prediction_mae']:.3f}")
 	print(f"Raw prediction MSE: {result['raw_prediction_mse']:.3f}")
 	print(f"Normalized prediction MAE: {result['normalized_prediction_mae']:.3f}")
