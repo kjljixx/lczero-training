@@ -286,12 +286,18 @@ def evaluate(
 		if progress_every > 0 and (batch_idx + 1) % progress_every == 0:
 			running_actual = np.asarray(actual_elos, dtype=np.float64)
 			running_pred = np.asarray(predicted_elos, dtype=np.float64)
+			running_error_raw = running_pred - running_actual
+			running_mae_raw = float(np.mean(np.abs(running_error_raw)))
+			running_mse_raw = float(np.mean(np.square(running_error_raw)))
 
 			running_pred_norm, running_scale, running_shift = normalize_predictions(
 				running_actual,
 				running_pred,
 				rescale_predictions,
 			)
+			running_error_norm = running_pred_norm - running_actual
+			running_mae_norm = float(np.mean(np.abs(running_error_norm)))
+			running_mse_norm = float(np.mean(np.square(running_error_norm)))
 
 			running_actual_bins = bin_all(running_actual)
 			running_pred_bins = bin_all(running_pred_norm)
@@ -304,7 +310,9 @@ def evaluate(
 			print(
 				f'Processed {batch_idx + 1} batches ({len(actual_elos)} player-samples). '
 				f'scale={running_scale:.6f} shift={running_shift:.3f} '
-				f'overall_bin_acc={running_overall:.4f}'
+				f'overall_bin_acc={running_overall:.4f} '
+				f'raw_mae={running_mae_raw:.3f} raw_mse={running_mse_raw:.3f} '
+				f'norm_mae={running_mae_norm:.3f} norm_mse={running_mse_norm:.3f}'
 			)
 			print('Running per-bin accuracy (actual bin denominator):')
 			print(format_per_bin(running_bin_acc, running_counts))
@@ -325,6 +333,12 @@ def evaluate(
 		rescale_predictions,
 	)
 	norm_pred_mean = float(np.mean(norm_pred_arr))
+	raw_error = pred_arr - actual_arr
+	raw_mae = float(np.mean(np.abs(raw_error)))
+	raw_mse = float(np.mean(np.square(raw_error)))
+	norm_error = norm_pred_arr - actual_arr
+	norm_mae = float(np.mean(np.abs(norm_error)))
+	norm_mse = float(np.mean(np.square(norm_error)))
 
 	actual_bins = bin_all(actual_arr)
 	pred_bins = bin_all(norm_pred_arr)
@@ -343,6 +357,10 @@ def evaluate(
 		'applied_pred_scale': float(pred_scale),
 		'applied_mean_shift': float(mean_shift),
 		'normalized_pred_mean_elo': norm_pred_mean,
+		'raw_prediction_mae': raw_mae,
+		'raw_prediction_mse': raw_mse,
+		'normalized_prediction_mae': norm_mae,
+		'normalized_prediction_mse': norm_mse,
 		'overall_bin_accuracy': overall_accuracy,
 		'per_bin_accuracy': {
 			BIN_LABELS[i]: None if np.isnan(bin_acc[i]) else float(bin_acc[i])
@@ -368,6 +386,10 @@ def print_summary(model_kind: str, shard_count: int, result: Dict[str, object]) 
 	print(f"Applied prediction scale: {result['applied_pred_scale']:.6f}")
 	print(f"Applied mean shift: {result['applied_mean_shift']:.3f}")
 	print(f"Normalized predicted mean Elo: {result['normalized_pred_mean_elo']:.3f}")
+	print(f"Raw prediction MAE: {result['raw_prediction_mae']:.3f}")
+	print(f"Raw prediction MSE: {result['raw_prediction_mse']:.3f}")
+	print(f"Normalized prediction MAE: {result['normalized_prediction_mae']:.3f}")
+	print(f"Normalized prediction MSE: {result['normalized_prediction_mse']:.3f}")
 	print(f"Overall bin accuracy: {result['overall_bin_accuracy']:.4f}")
 
 	confusion = np.asarray(result['confusion_matrix'], dtype=np.int64)
