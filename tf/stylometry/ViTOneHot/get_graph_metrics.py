@@ -828,7 +828,8 @@ def print_summary(metrics: Dict[str, object]) -> None:
   print(
     f"Strongly connected components (directed): {metrics['strongly_connected_components']} | "
     f"Largest SCC size: {metrics['largest_scc_size']} "
-    f"({metrics['largest_scc_pct']:.2f}% of players)"
+    f"({metrics['largest_scc_pct']:.2f}% of players) | "
+    f"Games in largest SCC: {metrics['games_in_largest_scc']}"
   )
   print(
     f"Directed diameter (largest SCC): {metrics['directed_diameter']} "
@@ -936,6 +937,14 @@ def main() -> None:
     build_result.id_to_name[flow_sink_id] if flow_sink_id is not None else ''
   )
 
+  # Compute number of games in the largest SCC
+  largest_scc_set = set(largest_scc_nodes)
+  games_in_largest_scc = sum(
+    build_result.edge_games[(src, dst)]
+    for (src, dst) in build_result.edge_games
+    if src in largest_scc_set and dst in largest_scc_set
+  )
+
   metrics: Dict[str, object] = {
     'total_records': int(total_records),
     'num_players': int(num_players),
@@ -962,6 +971,7 @@ def main() -> None:
     'avg_shortest_path_estimate': float(diameter_info['avg_shortest_path_estimate']),
     'mutual_pairs': float(reciprocity['mutual_pairs']),
     'edge_reciprocity': float(reciprocity['edge_reciprocity']),
+    'games_in_largest_scc': int(games_in_largest_scc),
     'out_degree_distribution': summarize_distribution(graph_views.out_degree.astype(np.float64)),
     'in_degree_distribution': summarize_distribution(graph_views.in_degree.astype(np.float64)),
     'out_strength_distribution': summarize_distribution(graph_views.out_strength.astype(np.float64)),
