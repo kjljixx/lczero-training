@@ -110,3 +110,20 @@ actual\pred  1000-1199  1200-1399  1400-1599  1600-1799  1800-1999  2000-2199  2
 2400-2599            0          0          0          2         14         22          0          0
 
 actual_pair_mean_abs_diff=110.419 actual_pair_abs_diff_q25=30.000 actual_pair_abs_diff_q50=73.000 actual_pair_abs_diff_q75=151.000
+
+Records: 600000
+Players: 101582
+Directed edges: 545076
+Undirected edges: 494890
+Directed density: 0.00005282
+Undirected density: 0.00009592
+white_win=296747, draw=26170, black_win=277083
+Connected components (undirected): 921 | Largest: 99663
+Strongly connected components: 33481 | Largest SCC: 67904
+Directed diameter (approx): 14 [approx_double_sweep, samples=8] Avg shortest-path: 7.3988
+Mutual pairs: 50186 | Edge reciprocity: 0.1841
+Out-degree stats: {"min": 0.0, "mean": 5.365871906440117, "median": 2.0, "p90": 14.0, "max": 184.0}
+In-degree stats: {"min": 0.0, "mean": 5.365871906440117, "median": 2.0, "p90": 14.0, "max": 175.0}
+Out-strength stats: {"min": 0.0, "mean": 5.906558248508594, "median": 2.0, "p90": 15.0, "max": 240.0}
+In-strength stats: {"min": 0.0, "mean": 5.906558248508594, "median": 2.0, "p90": 15.0, "max": 211.0}
+Player Elo stats: {"min": 776.0, "mean": 1581.5329859196502, "median": 1576.25, "p90": 1944.8732142857145, "max": 2788.5238095238096} (n=101582)

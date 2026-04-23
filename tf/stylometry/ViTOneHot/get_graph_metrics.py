@@ -19,6 +19,11 @@ EdgeKey = Tuple[PlayerId, PlayerId]
 
 
 def parse_args() -> argparse.Namespace:
+		parser.add_argument(
+			'--edge-use-wins',
+			action='store_true',
+			help='Use winner->loser for directed edges/counts instead of white->black.'
+		)
 	parser = argparse.ArgumentParser(
 		description='Compute scalable graph metrics from game-outcome TFRecords.'
 	)
@@ -186,6 +191,10 @@ def build_graph_from_tfrecords(
 	dataset = tf.data.TFRecordDataset(list(tfrecord_paths), num_parallel_reads=tf.data.AUTOTUNE)
 	example = tf.train.Example()
 
+
+	# Use winner->loser edges if requested
+	use_win_edges = getattr(globals().get('args', None), 'edge_use_wins', False)
+
 	for raw_record in dataset:
 		total_records += 1
 		example.ParseFromString(bytes(raw_record.numpy()))
@@ -200,7 +209,17 @@ def build_graph_from_tfrecords(
 		white_id = get_or_create_player_id(white_name)
 		black_id = get_or_create_player_id(black_name)
 
-		edge_games[(white_id, black_id)] += 1
+		if use_win_edges:
+			# Only winner->loser edges
+			if game_result > 0:
+				edge_games[(white_id, black_id)] += 1
+			elif game_result < 0:
+				edge_games[(black_id, white_id)] += 1
+			# draws do not create an edge
+		else:
+			# Default: white->black for every game
+			edge_games[(white_id, black_id)] += 1
+
 		undirected_key = (white_id, black_id) if white_id <= black_id else (black_id, white_id)
 		undirected_games[undirected_key] += 1
 
@@ -857,6 +876,8 @@ def main() -> None:
 	tfrecord_paths = find_tfrecords(args.input_paths)
 	print(f'Found {len(tfrecord_paths)} TFRecord file(s).')
 
+	# Make args visible to build_graph_from_tfrecords for edge_use_wins
+	globals()['args'] = args
 	build_result = build_graph_from_tfrecords(tfrecord_paths, progress_every=args.progress_every)
 	num_players = len(build_result.id_to_name)
 	if num_players == 0:
