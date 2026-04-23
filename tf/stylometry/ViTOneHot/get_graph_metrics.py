@@ -255,6 +255,12 @@ def build_graph_from_tfrecords(
       largest_component_size = len(connected_components[0]) if connected_components else 0
       largest_scc_nodes = sccs[0] if sccs else []
       largest_scc_size = len(largest_scc_nodes)
+      largest_scc_set = set(largest_scc_nodes)
+      games_in_largest_scc = sum(
+        edge_games[(src, dst)]
+        for (src, dst) in edge_games
+        if src in largest_scc_set and dst in largest_scc_set
+      )
       # Diameter (approx, fast)
       diameter_info = {'directed_diameter': 0, 'method': 'skip', 'sample_count': 0, 'avg_shortest_path_estimate': 0.0}
       try:
