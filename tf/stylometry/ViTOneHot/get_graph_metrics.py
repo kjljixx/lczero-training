@@ -220,11 +220,84 @@ def build_graph_from_tfrecords(
 			elo_sum[black_id] += float(black_elo)
 			elo_count[black_id] += 1
 
+
 		if progress_every > 0 and total_records % progress_every == 0:
-			print(
-				f'Processed {total_records} records | '
-				f'players={len(id_to_name)} | directed_edges={len(edge_games)}'
-			)
+			# Compute and print all available metrics so far
+			num_players = len(id_to_name)
+			num_directed_edges = len(edge_games)
+			num_undirected_edges = len(undirected_games)
+			directed_possible_edges = max(1, num_players * max(0, num_players - 1))
+			undirected_possible_edges = max(1, (num_players * max(0, num_players - 1)) // 2)
+			edge_weights = np.asarray(list(edge_games.values()), dtype=np.int64)
+			# Build graph views
+			graph_views = build_graph_views(num_players, edge_games)
+			connected_components = connected_components_undirected(graph_views.undirected_adj)
+			sccs = strongly_connected_components(graph_views.directed_adj, graph_views.directed_rev)
+			largest_component_size = len(connected_components[0]) if connected_components else 0
+			largest_scc_nodes = sccs[0] if sccs else []
+			largest_scc_size = len(largest_scc_nodes)
+			# Diameter (approx, fast)
+			diameter_info = {'directed_diameter': 0, 'method': 'skip', 'sample_count': 0, 'avg_shortest_path_estimate': 0.0}
+			try:
+				diameter_info = directed_diameter_metrics(
+					graph_views.directed_adj,
+					largest_scc_nodes,
+					exact_node_threshold=300,  # Use a small threshold for speed in progress
+					diameter_samples=8,
+					seed=42,
+				)
+			except Exception:
+				pass
+			# Reciprocity
+			def compute_reciprocity(edge_games):
+				directed_edges = len(edge_games)
+				if directed_edges == 0:
+					return {'mutual_pairs': 0.0, 'edge_reciprocity': 0.0}
+				mutual_pairs = 0
+				for src, dst in edge_games:
+					if src < dst and (dst, src) in edge_games:
+						mutual_pairs += 1
+				reciprocal_edges = 2 * mutual_pairs
+				edge_reciprocity = reciprocal_edges / directed_edges
+				return {'mutual_pairs': float(mutual_pairs), 'edge_reciprocity': float(edge_reciprocity)}
+			reciprocity = compute_reciprocity(edge_games)
+			# Degree/strength stats
+			def summarize_distribution(values):
+				if isinstance(values, list):
+					values = np.asarray(values, dtype=np.float64)
+				if values.size == 0:
+					return {'min': 0.0, 'mean': 0.0, 'median': 0.0, 'p90': 0.0, 'max': 0.0}
+				return {
+					'min': float(np.min(values)),
+					'mean': float(np.mean(values)),
+					'median': float(np.median(values)),
+					'p90': float(np.quantile(values, 0.90)),
+					'max': float(np.max(values)),
+				}
+			# Elo
+			known_elo_values = []
+			for player_id in range(num_players):
+				if elo_count[player_id] > 0:
+					known_elo_values.append(elo_sum[player_id] / elo_count[player_id])
+			known_elo = np.asarray(known_elo_values, dtype=np.float64)
+			# Print summary
+			print('\n=== Progress Metrics ===')
+			print(f"Records: {total_records}")
+			print(f"Players: {num_players}")
+			print(f"Directed edges: {num_directed_edges}")
+			print(f"Undirected edges: {num_undirected_edges}")
+			print(f"Directed density: {num_directed_edges / directed_possible_edges:.8f}")
+			print(f"Undirected density: {num_undirected_edges / undirected_possible_edges:.8f}")
+			print(f"white_win={white_win_count}, draw={draw_count}, black_win={black_win_count}")
+			print(f"Connected components (undirected): {len(connected_components)} | Largest: {largest_component_size}")
+			print(f"Strongly connected components: {len(sccs)} | Largest SCC: {largest_scc_size}")
+			print(f"Directed diameter (approx): {diameter_info['directed_diameter']} [{diameter_info['method']}, samples={diameter_info['sample_count']}] Avg shortest-path: {diameter_info['avg_shortest_path_estimate']:.4f}")
+			print(f"Mutual pairs: {int(reciprocity['mutual_pairs'])} | Edge reciprocity: {reciprocity['edge_reciprocity']:.4f}")
+			print(f"Out-degree stats: {json.dumps(summarize_distribution(graph_views.out_degree))}")
+			print(f"In-degree stats: {json.dumps(summarize_distribution(graph_views.in_degree))}")
+			print(f"Out-strength stats: {json.dumps(summarize_distribution(graph_views.out_strength))}")
+			print(f"In-strength stats: {json.dumps(summarize_distribution(graph_views.in_strength))}")
+			print(f"Player Elo stats: {json.dumps(summarize_distribution(known_elo))} (n={known_elo.size})")
 
 	return GraphBuildResult(
 		name_to_id=name_to_id,
