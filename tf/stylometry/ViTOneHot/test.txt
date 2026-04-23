@@ -108,3 +108,5 @@ actual\pred  1000-1199  1200-1399  1400-1599  1600-1799  1800-1999  2000-2199  2
 2000-2199            0          0          8        146        335        136          0          0
 2200-2399            0          0          0         20         78         54          0          0
 2400-2599            0          0          0          2         14         22          0          0
+
+actual_pair_mean_abs_diff=110.419 actual_pair_abs_diff_q25=30.000 actual_pair_abs_diff_q50=73.000 actual_pair_abs_diff_q75=151.000
