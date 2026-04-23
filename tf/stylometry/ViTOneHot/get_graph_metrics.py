@@ -309,7 +309,7 @@ def build_graph_from_tfrecords(
       print(f"Undirected density: {num_undirected_edges / undirected_possible_edges:.8f}")
       print(f"white_win={white_win_count}, draw={draw_count}, black_win={black_win_count}")
       print(f"Connected components (undirected): {len(connected_components)} | Largest: {largest_component_size}")
-      print(f"Strongly connected components: {len(sccs)} | Largest SCC: {largest_scc_size}")
+      print(f"Strongly connected components: {len(sccs)} | Largest SCC: {largest_scc_size} | Games in largest SCC: {games_in_largest_scc}")
       print(f"Directed diameter (approx): {diameter_info['directed_diameter']} [{diameter_info['method']}, samples={diameter_info['sample_count']}] Avg shortest-path: {diameter_info['avg_shortest_path_estimate']:.4f}")
       print(f"Mutual pairs: {int(reciprocity['mutual_pairs'])} | Edge reciprocity: {reciprocity['edge_reciprocity']:.4f}")
       print(f"Out-degree stats: {json.dumps(summarize_distribution(graph_views.out_degree))}")
