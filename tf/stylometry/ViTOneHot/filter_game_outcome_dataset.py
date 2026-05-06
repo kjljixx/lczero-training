@@ -104,3 +104,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+# python3 stylometry/ViTOneHot/filter_game_outcome_dataset.py stylometry/ViTOneHot/data/run2026-04-06/ stylometry/ViTOneHot/data/run2026-04-06-filtered/

@@ -148,3 +148,21 @@ Player Elo stats: {"min": 776.0, "mean": 1581.5329859196502, "median": 1576.25, 
 -Looks like there is one big connected component w/ majority of players in it
 -distr # of game for each player is very tail-heavy
 -Seems like (winner, loser) about halves connectivity? see edge reciprocity, but ont he other hand this doesn't seem to be affecting the # or size of strongly connected components much
+
+=== Progress Metrics ===
+Records: 600000
+Players: 101582
+Directed edges: 505613
+Undirected edges: 494890
+Directed density: 0.00004900
+Undirected density: 0.00009592
+white_win=296747, draw=26170, black_win=277083
+Connected components (undirected): 1911 | Largest: 98665
+Strongly connected components: 37401 | Largest SCC: 64040 | Games in largest SCC: 515934
+Directed diameter (approx): 15 [approx_double_sweep, samples=8] Avg shortest-path: 7.5781
+Mutual pairs: 29137 | Edge reciprocity: 0.1153
+Out-degree stats: {"min": 0.0, "mean": 4.977387726171959, "median": 2.0, "p90": 13.0, "max": 178.0}
+In-degree stats: {"min": 0.0, "mean": 4.977387726171959, "median": 2.0, "p90": 13.0, "max": 171.0}
+Out-strength stats: {"min": 0.0, "mean": 5.648933866236145, "median": 2.0, "p90": 15.0, "max": 200.0}
+In-strength stats: {"min": 0.0, "mean": 5.648933866236145, "median": 2.0, "p90": 14.0, "max": 197.0}
+Player Elo stats: {"min": 776.0, "mean": 1581.5329859196502, "median": 1576.25, "p90": 1944.8732142857145, "max": 2788.5238095238096} (n=101582)
