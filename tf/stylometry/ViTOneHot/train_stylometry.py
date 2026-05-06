@@ -228,13 +228,19 @@ def create_seq_dataset(
       try:
         raw_ds = tf.data.TFRecordDataset(shard_path)
         for record_idx, raw_record in enumerate(raw_ds):
-          if skip_rate > 0.0:
-            # Deterministic skip decision keeps validation subset fixed across epochs.
-            key = f"{shard_path}:{record_idx}".encode('utf-8')
-            hashed = int.from_bytes(hashlib.blake2b(key, digest_size=8).digest(), 'big')
-            keep_prob = hashed / float(2**64)
-            if keep_prob < skip_rate:
-              continue
+            if skip_rate > 0.0:
+              # Deterministic skip decision keeps validation subset fixed across epochs.
+              key = f"{shard_path}:{record_idx}".encode('utf-8')
+              hashed = int.from_bytes(hashlib.blake2b(key, digest_size=8).digest(), 'big')
+              keep_prob = hashed / float(2**64)
+              if skip_rate > 0.5:
+                # for validation we want items WHERE prob < 1-skip_rate
+                if keep_prob >= (1.0 - skip_rate):
+                  continue
+              else:
+                # for training with same shard we want items WHERE prob >= skip_rate
+                if keep_prob < skip_rate:
+                  continue
           try:
             (
               white_seq,
@@ -334,6 +340,10 @@ def get_shard_paths(data_dir: str, shard_type: str) -> List[str]:
 
 def split_shards(shard_paths: List[str], val_split: float) -> Tuple[List[str], List[str]]:
   num_shards = len(shard_paths)
+  if num_shards == 0:
+    return [], []
+  if num_shards == 1:
+    return shard_paths, shard_paths
   val_count = max(1, int(num_shards * val_split))
   random.shuffle(shard_paths)
   val_shards = shard_paths[:val_count]
@@ -599,8 +609,11 @@ def train_model(
   train_shards, val_shards = split_shards(seq_shard_paths, val_split)
   print(f"Train shards: {len(train_shards)}, Val shards: {len(val_shards)}")
 
-  train_dataset = create_seq_dataset(train_shards, batch_size, shuffle=True, repeat=True)
-  val_dataset = create_seq_dataset(val_shards, batch_size, shuffle=False, repeat=False, skip_rate=0.99)
+  train_skip_rate = 0.2 if len(seq_shard_paths) == 1 else 0.0
+  val_skip_rate = 0.8 if len(seq_shard_paths) == 1 else 0.99
+  
+  train_dataset = create_seq_dataset(train_shards, batch_size, shuffle=True, repeat=True, skip_rate=train_skip_rate)
+  val_dataset = create_seq_dataset(val_shards, batch_size, shuffle=False, repeat=False, skip_rate=val_skip_rate)
 
   print("Creating model...")
 
