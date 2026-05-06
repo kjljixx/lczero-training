@@ -228,19 +228,19 @@ def create_seq_dataset(
       try:
         raw_ds = tf.data.TFRecordDataset(shard_path)
         for record_idx, raw_record in enumerate(raw_ds):
-            if skip_rate > 0.0:
-              # Deterministic skip decision keeps validation subset fixed across epochs.
-              key = f"{shard_path}:{record_idx}".encode('utf-8')
-              hashed = int.from_bytes(hashlib.blake2b(key, digest_size=8).digest(), 'big')
-              keep_prob = hashed / float(2**64)
-              if skip_rate > 0.5:
-                # for validation we want items WHERE prob < 1-skip_rate
-                if keep_prob >= (1.0 - skip_rate):
-                  continue
-              else:
-                # for training with same shard we want items WHERE prob >= skip_rate
-                if keep_prob < skip_rate:
-                  continue
+          if skip_rate > 0.0:
+            # Deterministic skip decision keeps validation subset fixed across epochs.
+            key = f"{shard_path}:{record_idx}".encode('utf-8')
+            hashed = int.from_bytes(hashlib.blake2b(key, digest_size=8).digest(), 'big')
+            keep_prob = hashed / float(2**64)
+            if skip_rate > 0.5:
+              # for validation we want items WHERE prob < 1-skip_rate
+              if keep_prob >= (1.0 - skip_rate):
+                continue
+            else:
+              # for training with same shard we want items WHERE prob >= skip_rate
+              if keep_prob < skip_rate:
+                continue
           try:
             (
               white_seq,
