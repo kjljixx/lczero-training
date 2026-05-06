@@ -390,7 +390,7 @@ def process_pgns(
   max_moves: int = 100,
   min_moves: int = 1
 ):
-  SHARD_SIZE = 400000
+  SHARD_SIZE = 569
   curr_sequences = {}
 
   curr_results = []
