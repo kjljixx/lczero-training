@@ -41,6 +41,75 @@ BIN_LABELS = [
 BIN_COUNT = len(BIN_LABELS)
 
 
+PLAYER_ELO_TABLE = {
+	'superkid2008': 2817.4,
+	'ANRKW': 2714.9,
+	'sreevas': 2654.8,
+	'aadinema': 2624.7,
+	'Abelsajan': 2560.4,
+	'king__kris': 2552.0,
+	'Adhirathklm': 2547.8,
+	'Phenomenal_Chess': 2540.9,
+	'Syed_Abdul_Khader': 2537.7,
+	'KPRKrishnan': 2496.4,
+	'a_lanbyju2007': 2492.9,
+	'aaditya2010': 2492.2,
+	'devduttbinuccs': 2461.7,
+	'sivadathsg2010': 2460.8,
+	'Sid-2010': 2459.7,
+	'NIranjan2006': 2457.7,
+	'Gowthamchess22': 2451.8,
+	'StMichael1': 2450.1,
+	'nihe000': 2448.3,
+	'ananda46': 2428.9,
+	'marcoivan': 2427.1,
+	'Ayaanspalappillil': 2392.4,
+	'Darsith': 2386.4,
+	'PAthul-1': 2383.3,
+	'AaadikLenin2012': 2374.0,
+	'AMALKRISHNA001': 2346.4,
+	'Josephtom708': 2335.7,
+	'Pranavpradeep': 2335.6,
+	'GoPiKa2020': 2330.5,
+	'AllenTom': 2327.9,
+	'Kunduparamban': 2312.4,
+	'goodsadhu': 2309.4,
+	'Gurupriya2011': 2300.9,
+	'Albinsajan': 2298.3,
+	'Harsh_4321': 2277.7,
+	'AMANchess2020': 2267.3,
+	'FakpuiiPa': 2262.0,
+	'Vigneshpandian': 2253.7,
+	'Dubiousdude': 2250.9,
+	'Jayaditya_Gantayet1': 2238.8,
+	'Mrchess_yt_2': 2232.0,
+	'fafic': 2215.5,
+	'Midhevsunil10': 2187.3,
+	'Amn2010': 2172.7,
+	'Noeltom_2010': 2168.0,
+	'johanchess2012': 2163.4,
+	'Ganeshpandiyan': 2152.4,
+	'BrianReji': 2148.0,
+	'Amanlal': 2142.8,
+	'advait16': 2131.4,
+	'DragonChess2007': 2131.0,
+	'CHINTU1201': 2128.9,
+	'tanvish1801': 2089.1,
+	'vinodmadav_00': 2083.2,
+	'Cleopa-22': 2050.1,
+	'SijoJoseV': 2005.2,
+	'Dhanya-Dhanvin_007': 1965.1,
+	'jowett': 1960.6,
+	'Saravan2022': 1906.4,
+	'mukish': 1823.2,
+	'Ishan_C2': 1819.0,
+	'sudhIksha090522': 1794.9,
+	'shiyasmohd': 1785.5,
+	'NidhishSakthi': 1772.5,
+	'kevinjoemartin': 1757.8,
+}
+
+
 def parse_args() -> argparse.Namespace:
 	parser = argparse.ArgumentParser(
 		description='Evaluate Elo bin accuracy from seq_shards TFRecords.'
@@ -271,8 +340,13 @@ def evaluate(
 		pred_e0 = _predict_player_elos(elo_predictor, model_inputs['seq0'], model_inputs['mask0'])
 		pred_e1 = _predict_player_elos(elo_predictor, model_inputs['seq1'], model_inputs['mask1'])
 
-		actual_e0 = tf.cast(inputs['stm_player_elo'], tf.float32)
-		actual_e1 = tf.cast(inputs['opp_player_elo'], tf.float32)
+		def get_actual_elos(names: tf.Tensor, default_elos: tf.Tensor) -> np.ndarray:
+			name_list = [n.decode('utf-8') for n in names.numpy()]
+			default_list = default_elos.numpy().astype(np.float32)
+			return np.array([PLAYER_ELO_TABLE.get(name, default) for name, default in zip(name_list, default_list)], dtype=np.float32)
+
+		actual_e0 = get_actual_elos(inputs['stm_player_name'], inputs['stm_player_elo'])
+		actual_e1 = get_actual_elos(inputs['opp_player_name'], inputs['opp_player_elo'])
 
 		pred_e0_np = np.asarray(pred_e0, dtype=np.float64).reshape(-1)
 		pred_e1_np = np.asarray(pred_e1, dtype=np.float64).reshape(-1)
