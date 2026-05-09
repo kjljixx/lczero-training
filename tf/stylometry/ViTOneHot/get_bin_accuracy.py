@@ -109,6 +109,22 @@ PLAYER_ELO_TABLE = {
 	'kevinjoemartin': 1757.8,
 }
 
+PLAYERS = [
+	'superkid2008', 'ANRKW', 'sreevas', 'aadinema', 'Abelsajan', 'king__kris', 'Adhirathklm',
+	'Phenomenal_Chess', 'Syed_Abdul_Khader', 'KPRKrishnan', 'a_lanbyju2007', 'aaditya2010',
+	'devduttbinuccs', 'sivadathsg2010', 'Sid-2010', 'NIranjan2006', 'Gowthamchess22',
+	'StMichael1', 'nihe000', 'ananda46', 'marcoivan', 'Ayaanspalappillil', 'Darsith',
+	'PAthul-1', 'AaadikLenin2012', 'AMALKRISHNA001', 'Josephtom708', 'Pranavpradeep',
+	'GoPiKa2020', 'AllenTom', 'Kunduparamban', 'goodsadhu', 'Gurupriya2011', 'Albinsajan',
+	'Harsh_4321', 'AMANchess2020', 'FakpuiiPa', 'Vigneshpandian', 'Dubiousdude',
+	'Jayaditya_Gantayet1', 'Mrchess_yt_2', 'fafic', 'Midhevsunil10', 'Amn2010',
+	'Noeltom_2010', 'johanchess2012', 'Ganeshpandiyan', 'BrianReji', 'Amanlal',
+	'advait16', 'DragonChess2007', 'CHINTU1201', 'tanvish1801', 'vinodmadav_00',
+	'Cleopa-22', 'SijoJoseV', 'Dhanya-Dhanvin_007', 'jowett', 'Saravan2022', 'mukish',
+	'Ishan_C2', 'sudhIksha090522', 'shiyasmohd', 'NidhishSakthi', 'kevinjoemartin'
+]
+PLAYER_TO_ID = {name: i for i, name in enumerate(PLAYERS)}
+
 
 def parse_args() -> argparse.Namespace:
 	parser = argparse.ArgumentParser(
@@ -330,15 +346,27 @@ def evaluate(
 		if max_batches > 0 and batch_idx >= max_batches:
 			break
 
+		def _decode_name(name_value) -> str:
+			if isinstance(name_value, bytes):
+				return name_value.decode('utf-8', errors='replace')
+			if isinstance(name_value, np.bytes_):
+				return bytes(name_value).decode('utf-8', errors='replace')
+			return str(name_value)
+
+		stm_ids = np.array([PLAYER_TO_ID.get(_decode_name(n), -1) for n in inputs['stm_player_name'].numpy()], dtype=np.int32)
+		opp_ids = np.array([PLAYER_TO_ID.get(_decode_name(n), -1) for n in inputs['opp_player_name'].numpy()], dtype=np.int32)
+
 		model_inputs = {
 			'seq0': inputs['seq0'],
 			'seq1': inputs['seq1'],
 			'mask0': inputs['mask0'],
 			'mask1': inputs['mask1'],
+			'stm_player_id': stm_ids,
+			'opp_player_id': opp_ids,
 		}
 
-		pred_e0 = _predict_player_elos(elo_predictor, model_inputs['seq0'], model_inputs['mask0'])
-		pred_e1 = _predict_player_elos(elo_predictor, model_inputs['seq1'], model_inputs['mask1'])
+		pred_e0 = elo_predictor(model_inputs['stm_player_id'], training=False)
+		pred_e1 = elo_predictor(model_inputs['opp_player_id'], training=False)
 
 		def get_actual_elos(names: tf.Tensor, default_elos: tf.Tensor) -> np.ndarray:
 			name_list = [n.decode('utf-8') for n in names.numpy()]
