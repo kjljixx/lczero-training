@@ -177,11 +177,11 @@ def load_model(model_path: str) -> tf.keras.Model:
 
 
 def detect_model_kind(model: tf.keras.Model) -> Tuple[str, EloPredictor]:
-	if hasattr(model, 'elo_predictor') and callable(getattr(model, 'elo_predictor')):
+	if hasattr(model, 'elo_predictor'):
 		elo_predictor = getattr(model, 'elo_predictor')
-		if hasattr(elo_predictor, 'vit') and hasattr(elo_predictor, 'regression_head'):
+		if hasattr(elo_predictor, 'player_embedding') and hasattr(elo_predictor, 'regression_head'):
 			return 'game_outcome_predictor', cast(EloPredictor, elo_predictor)
-	if hasattr(model, 'vit') and hasattr(model, 'regression_head'):
+	if hasattr(model, 'player_embedding') and hasattr(model, 'regression_head'):
 		return 'elo_predictor', cast(EloPredictor, model)
 	raise ValueError(
 		'Unsupported model type. Expected GameOutcomePredictor or EloPredictor-compatible model.'
