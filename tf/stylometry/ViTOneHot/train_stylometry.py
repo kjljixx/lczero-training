@@ -30,6 +30,23 @@ PIECE_SYMBOLS = {
   6: 'k',
 }
 
+PLAYERS = [
+  'superkid2008', 'ANRKW', 'sreevas', 'aadinema', 'Abelsajan', 'king__kris', 'Adhirathklm',
+  'Phenomenal_Chess', 'Syed_Abdul_Khader', 'KPRKrishnan', 'a_lanbyju2007', 'aaditya2010',
+  'devduttbinuccs', 'sivadathsg2010', 'Sid-2010', 'NIranjan2006', 'Gowthamchess22',
+  'StMichael1', 'nihe000', 'ananda46', 'marcoivan', 'Ayaanspalappillil', 'Darsith',
+  'PAthul-1', 'AaadikLenin2012', 'AMALKRISHNA001', 'Josephtom708', 'Pranavpradeep',
+  'GoPiKa2020', 'AllenTom', 'Kunduparamban', 'goodsadhu', 'Gurupriya2011', 'Albinsajan',
+  'Harsh_4321', 'AMANchess2020', 'FakpuiiPa', 'Vigneshpandian', 'Dubiousdude',
+  'Jayaditya_Gantayet1', 'Mrchess_yt_2', 'fafic', 'Midhevsunil10', 'Amn2010',
+  'Noeltom_2010', 'johanchess2012', 'Ganeshpandiyan', 'BrianReji', 'Amanlal',
+  'advait16', 'DragonChess2007', 'CHINTU1201', 'tanvish1801', 'vinodmadav_00',
+  'Cleopa-22', 'SijoJoseV', 'Dhanya-Dhanvin_007', 'jowett', 'Saravan2022', 'mukish',
+  'Ishan_C2', 'sudhIksha090522', 'shiyasmohd', 'NidhishSakthi', 'kevinjoemartin'
+]
+PLAYER_TO_ID = {name: i for i, name in enumerate(PLAYERS)}
+NUM_PLAYERS = len(PLAYERS)
+
 
 def _flip_vertical_square(square: int) -> int:
   rank = square // 8
@@ -289,6 +306,8 @@ def create_seq_dataset(
               'raw_seq1': black_seq.numpy().astype(np.int64),
               'stm_player_name': stm_name.numpy(),
               'opp_player_name': opp_name.numpy(),
+              'stm_player_id': np.int32(PLAYER_TO_ID.get(_decode_name(stm_name.numpy()), -1)),
+              'opp_player_id': np.int32(PLAYER_TO_ID.get(_decode_name(opp_name.numpy()), -1)),
               'stm_player_elo': np.int64(stm_elo.numpy()),
               'opp_player_elo': np.int64(opp_elo.numpy()),
             }, {
@@ -313,6 +332,8 @@ def create_seq_dataset(
       'raw_seq1': tf.TensorSpec(shape=(NUM_GAMES, MAX_MOVES, 5), dtype=tf.int64),                 # type: ignore
       'stm_player_name': tf.TensorSpec(shape=(), dtype=tf.string),                    # type: ignore
       'opp_player_name': tf.TensorSpec(shape=(), dtype=tf.string),                    # type: ignore
+      'stm_player_id': tf.TensorSpec(shape=(), dtype=tf.int32),                       # type: ignore
+      'opp_player_id': tf.TensorSpec(shape=(), dtype=tf.int32),                       # type: ignore
       'stm_player_elo': tf.TensorSpec(shape=(), dtype=tf.int64),                      # type: ignore
       'opp_player_elo': tf.TensorSpec(shape=(), dtype=tf.int64),                      # type: ignore
     },
@@ -352,15 +373,19 @@ def split_shards(shard_paths: List[str], val_split: float) -> Tuple[List[str], L
 
 @tf.keras.utils.register_keras_serializable()
 class EloPredictor(tf.keras.Model):
-  """GameAggregateViT encoder + regression head that predicts player elo."""
+  """Uses player one-hot encoding instead of context games to predict Elo."""
 
-  def __init__(self, vit: GameAggregateViT, hidden_dim: int,
+  def __init__(self, num_players: int, hidden_dim: int,
                ffn_hidden_dim: int = 256, ffn_layers: int = 2, **kwargs):
     super(EloPredictor, self).__init__(**kwargs)
-    self.vit = vit
+    self.num_players = num_players
     self.hidden_dim = hidden_dim
     self.ffn_hidden_dim = ffn_hidden_dim
     self.ffn_layers = ffn_layers
+    
+    # We ignore the original ViT and replace it with a simple embedding/one-hot layer
+    self.player_embedding = tf.keras.layers.Embedding(num_players, hidden_dim)
+    
     self.regression_head = tf.keras.Sequential(
       [tf.keras.layers.Dense(ffn_hidden_dim, activation='relu') for _ in range(ffn_layers)]
       + [tf.keras.layers.Dense(1)]
@@ -368,7 +393,7 @@ class EloPredictor(tf.keras.Model):
 
   def get_config(self):
     config = super().get_config()
-    config['vit'] = tf.keras.utils.serialize_keras_object(self.vit)
+    config['num_players'] = self.num_players
     config['hidden_dim'] = self.hidden_dim
     config['ffn_hidden_dim'] = self.ffn_hidden_dim
     config['ffn_layers'] = self.ffn_layers
@@ -376,20 +401,16 @@ class EloPredictor(tf.keras.Model):
 
   @classmethod
   def from_config(cls, config, custom_objects=None):
-    vit_config = config.pop('vit')
-    vit = tf.keras.utils.deserialize_keras_object(vit_config)
-    return cls(vit=vit, **config)
+    return cls(**config)
 
   def call(self, inputs, training=None, mask=None):
-    if isinstance(inputs, dict):
-      seq = inputs['seq']           # (batch, MAX_MOVES, SEQ_PLANES, 8, 8)
-      m = inputs.get('mask', None)  # (batch, MAX_MOVES)
-    else:
-      seq = inputs
-      m = None
-
+    # inputs is expected to be stm_player_id (batch,)
+    player_id = inputs
     is_training = _training_flag(training)
-    embedding = self.vit(seq, training=is_training, mask=m)  # (batch, hidden_dim)
+    
+    # Convert ID to embedding (conceptually similar to one-hot followed by dense)
+    embedding = self.player_embedding(player_id, training=is_training) # (batch, hidden_dim)
+    
     elo = self.regression_head(embedding, training=is_training)  # (batch, 1)
     return tf.squeeze(elo, axis=-1)  # (batch,)
 
@@ -411,48 +432,13 @@ class GameOutcomePredictor(tf.keras.Model):
     return cls(elo_predictor=elo_predictor, **config)
   
   def call(self, inputs, training=None, mask=None):
-    seq0 = inputs['seq0']
-    seq1 = inputs['seq1']
-    mask0 = inputs.get('mask0', None)
-    mask1 = inputs.get('mask1', None)
+    player_id0 = inputs['stm_player_id']
+    player_id1 = inputs['opp_player_id']
 
     is_training = _training_flag(training)
 
-    # Predict Elo per game, then average over valid games for each player.
-    batch_size = tf.shape(seq0)[0]
-    flat_seq0 = tf.reshape(seq0, [batch_size * NUM_GAMES, MAX_MOVES, SEQ_PLANES, 8, 8])
-    flat_seq1 = tf.reshape(seq1, [batch_size * NUM_GAMES, MAX_MOVES, SEQ_PLANES, 8, 8])
-
-    flat_mask0 = None
-    flat_mask1 = None
-    if mask0 is not None:
-      flat_mask0 = tf.reshape(mask0, [batch_size * NUM_GAMES, MAX_MOVES])
-    if mask1 is not None:
-      flat_mask1 = tf.reshape(mask1, [batch_size * NUM_GAMES, MAX_MOVES])
-
-    game_elo0 = self.elo_predictor({'seq': flat_seq0, 'mask': flat_mask0}, training=is_training)
-    game_elo1 = self.elo_predictor({'seq': flat_seq1, 'mask': flat_mask1}, training=is_training)
-
-    game_elo0 = tf.reshape(game_elo0, [batch_size, NUM_GAMES])
-    game_elo1 = tf.reshape(game_elo1, [batch_size, NUM_GAMES])
-
-    if mask0 is not None:
-      game_valid0 = tf.cast(tf.reduce_any(mask0 > 0.0, axis=-1), dtype=game_elo0.dtype)
-      elo0 = tf.math.divide_no_nan(
-        tf.reduce_sum(game_elo0 * game_valid0, axis=-1),
-        tf.reduce_sum(game_valid0, axis=-1),
-      )
-    else:
-      elo0 = tf.reduce_mean(game_elo0, axis=-1)
-
-    if mask1 is not None:
-      game_valid1 = tf.cast(tf.reduce_any(mask1 > 0.0, axis=-1), dtype=game_elo1.dtype)
-      elo1 = tf.math.divide_no_nan(
-        tf.reduce_sum(game_elo1 * game_valid1, axis=-1),
-        tf.reduce_sum(game_valid1, axis=-1),
-      )
-    else:
-      elo1 = tf.reduce_mean(game_elo1, axis=-1)
+    elo0 = self.elo_predictor(player_id0, training=is_training)
+    elo1 = self.elo_predictor(player_id1, training=is_training)
 
     elo_diff = elo0 - elo1
     draw_margin = 21.57 # represent approx 0.062 win prob as found empirically
@@ -627,13 +613,11 @@ def train_model(
   )
 
   if start_checkpoint != "":
-    # elo_predictor_model = tf.keras.models.load_model(start_checkpoint)
-    # model = GameOutcomePredictor(elo_predictor=elo_predictor_model)
     model = tf.keras.models.load_model(start_checkpoint)
   else:
     model = GameOutcomePredictor(
       elo_predictor=EloPredictor(
-        vit=stylo_model,
+        num_players=NUM_PLAYERS,
         hidden_dim=hidden_dim,
         ffn_hidden_dim=ffn_hidden_dim,
         ffn_layers=ffn_layers
@@ -658,6 +642,8 @@ def train_model(
     'seq1': (None, NUM_GAMES, MAX_MOVES, SEQ_PLANES, 8, 8),
     'mask0': (None, NUM_GAMES, MAX_MOVES),
     'mask1': (None, NUM_GAMES, MAX_MOVES),
+    'stm_player_id': (None,),
+    'opp_player_id': (None,),
   })
 
   print("Running pre-training validation...")
