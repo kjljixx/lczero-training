@@ -1,0 +1,67 @@
+Training + Validation Dataset is ~550 games (~350 used for prediction, ~200 for context (now only 1 game/player)), ~65 players
+
+Trained on game outcomes, not ground truth
+
+Epoch 11/500
+5000/5000 [==============================] - ETA: 0s - loss: 0.7776 - w_loss: 0.7776 - e0_e: 1892.7074 - e0_m: 3610269.2500 - e1_e: 1894.6172 - e1_m: 3633213.7500 - w_a: 0.7072 - w_m: 0.1422 - w_e: 0.2683
+Epoch 11: saving model to stylometry/ViTOneHot/models/run2026-05-05/checkpoint_epoch_11.keras
+5000/5000 [==============================] - 2685s 537ms/step - loss: 0.7776 - w_loss: 0.7776 - e0_e: 1892.7074 - e0_m: 3610269.2500 - e1_e: 1894.6172 - e1_m: 3633213.7500 - w_a: 0.7072 - w_m: 0.1422 - w_e: 0.2683 - val_loss: 1.0698 - val_w_loss: 1.0698 - val_e0_e: 1762.1764 - val_e0_m: 3143612.7500 - val_e1_e: 1746.9567 - val_e1_m: 3106156.2500 - val_w_a: 0.6071 - val_w_m: 0.1889 - val_w_e: 0.3280 - learning_rate: 1.0000e-04
+
+# NO rescaling, big (unconnected) dataset
+Processed 350 batches (5600 player-samples). scale=1.000000 shift=1649.035 overall_bin_acc=0.2896 actual_pair_mean_abs_diff=100.206 actual_pair_abs_diff_q25=26.000 actual_pair_abs_diff_q50=68.000 actual_pair_abs_diff_q75=137.000 raw_mae=1649.035 raw_mse=2793510.916 norm_mae=217.812 norm_mse=74196.080
+Running per-bin accuracy (actual bin denominator):
+bin        count  accuracy
+1000-1199    366    0.2787
+1200-1399    801    0.2160
+1400-1599   1390    0.2849
+1600-1799   1502    0.3708
+1800-1999    989    0.3782
+2000-2199    418    0.0478
+2200-2399    106    0.0000
+2400-2599     28    0.0000
+Running confusion matrix (rows=actual, cols=predicted):
+actual\pred  1000-1199  1200-1399  1400-1599  1600-1799  1800-1999  2000-2199  2200-2399  2400-2599
+1000-1199          102        112         87         52         13          0          0          0
+1200-1399          103        173        239        217         65          4          0          0
+1400-1599           84        189        396        432        270         19          0          0
+1600-1799           17        111        313        557        455         48          1          0
+1800-1999           12         43        149        389        374         22          0          0
+2000-2199            0          7         66        139        185         20          1          0
+2200-2399            0          0          8         38         56          4          0          0
+2400-2599            0          0          0         10          8         10          0          0
+
+# small dataset
+Actual mean Elo: 1922.753
+Raw predicted mean Elo: 111.780
+Applied prediction scale: 1.000000
+Applied mean shift: 1810.973
+Normalized predicted mean Elo: 1922.753
+Actual mean |elo0 - elo1|: 164.488
+Actual |elo0 - elo1| quartiles (Q1/Q2/Q3): 75.250 / 148.500 / 240.750
+Raw prediction MAE: 1810.973
+Raw prediction MSE: 3313768.676
+Normalized prediction MAE: 100.780
+Normalized prediction MSE: 34145.412
+Overall bin accuracy: 0.6012
+
+Per-bin accuracy (actual bin denominator):
+bin        count  accuracy
+1000-1199      0       nan
+1200-1399      0       nan
+1400-1599     14    0.0000
+1600-1799    114    0.6404
+1800-1999    334    0.4820
+2000-2199    176    0.8239
+2200-2399     14    0.9286
+2400-2599      0       nan
+
+Confusion matrix (rows=actual, cols=predicted):
+actual\pred  1000-1199  1200-1399  1400-1599  1600-1799  1800-1999  2000-2199  2200-2399  2400-2599
+1000-1199            0          0          0          0          0          0          0          0
+1200-1399            0          0          0          0          0          0          0          0
+1400-1599            9          0          0          0          5          0          0          0
+1600-1799            5          0         13         73         18          2          0          3
+1800-1999            3          1          0         50        161        112          1          6
+2000-2199            1          0          2          0         18        145          7          3
+2200-2399            0          0          0          0          1          0         13          0
+2400-2599            0          0          0          0          0          0          0          0
