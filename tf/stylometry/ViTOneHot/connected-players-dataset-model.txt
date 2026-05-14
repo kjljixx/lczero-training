@@ -65,3 +65,76 @@ actual\pred  1000-1199  1200-1399  1400-1599  1600-1799  1800-1999  2000-2199  2
 2000-2199            1          0          2          0         18        145          7          3
 2200-2399            0          0          0          0          1          0         13          0
 2400-2599            0          0          0          0          0          0          0          0
+
+#small dataset, actual=ordo elos, predicted=model trained on small dataset game outcomes & context games
+Rescale predictions: False
+Actual mean Elo: 2310.864
+Raw predicted mean Elo: 111.780
+Applied prediction scale: 1.000000
+Applied mean shift: 2199.084
+Normalized predicted mean Elo: 2310.864
+Actual mean |elo0 - elo1|: 233.791
+Actual |elo0 - elo1| quartiles (Q1/Q2/Q3): 108.925 / 194.600 / 321.600
+Raw prediction MAE: 2199.084
+Raw prediction MSE: 4861322.422
+Normalized prediction MAE: 87.996
+Normalized prediction MSE: 25353.892
+Overall bin accuracy: 0.6472
+
+Per-bin accuracy (actual bin denominator):
+bin        count  accuracy
+1000-1199      0       nan
+1200-1399      0       nan
+1400-1599      0       nan
+1600-1799     11    0.0000
+1800-1999     32    0.4062
+2000-2199    155    0.7161
+2200-2399    237    0.5992
+2400-2599    217    0.7189
+
+Confusion matrix (rows=actual, cols=predicted):
+actual\pred  1000-1199  1200-1399  1400-1599  1600-1799  1800-1999  2000-2199  2200-2399  2400-2599
+1000-1199            0          0          0          0          0          0          0          0
+1200-1399            0          0          0          0          0          0          0          0
+1400-1599            0          0          0          0          0          0          0          0
+1600-1799            0          0          0          0          0         11          0          0
+1800-1999            0         13          1          0         13          0          5          0
+2000-2199            0          0          3          0          0        111         37          4
+2200-2399            0          0          0          1          0          1        142         93
+2400-2599            0          0          1          0          2          0         58        156
+
+Rescale predictions: False
+Actual mean Elo: 2310.864
+Raw predicted mean Elo: -23.390
+Applied prediction scale: 1.000000
+Applied mean shift: 2334.254
+Normalized predicted mean Elo: 2310.864
+Actual mean |elo0 - elo1|: 233.791
+Actual |elo0 - elo1| quartiles (Q1/Q2/Q3): 108.925 / 194.600 / 321.600
+Raw prediction MAE: 2334.254
+Raw prediction MSE: 5457719.802
+Normalized prediction MAE: 63.292
+Normalized prediction MSE: 8978.989
+Overall bin accuracy: 0.6963
+
+Per-bin accuracy (actual bin denominator):
+bin        count  accuracy
+1000-1199      0       nan
+1200-1399      0       nan
+1400-1599      0       nan
+1600-1799     11    0.0000
+1800-1999     32    0.5312
+2000-2199    155    0.8903
+2200-2399    237    0.6034
+2400-2599    217    0.7189
+
+Confusion matrix (rows=actual, cols=predicted):
+actual\pred  1000-1199  1200-1399  1400-1599  1600-1799  1800-1999  2000-2199  2200-2399  2400-2599
+1000-1199            0          0          0          0          0          0          0          0
+1200-1399            0          0          0          0          0          0          0          0
+1400-1599            0          0          0          0          0          0          0          0
+1600-1799            0          0          0          0         10          0          1          0
+1800-1999            0          0          0          9         17          1          5          0
+2000-2199            0          0          0          0          0        138         14          3
+2200-2399            0          0          0          0          0          2        143         92
+2400-2599            0          0          0          0          0          3         58        156
