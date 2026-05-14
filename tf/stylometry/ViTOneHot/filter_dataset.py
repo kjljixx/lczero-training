@@ -1,0 +1,108 @@
+import numpy as np
+import chess.pgn
+import argparse
+import os
+
+def calculate_metrics(elo_diffs):
+    """Calculate mean and quartiles for the given list of absolute Elo differences."""
+    if not elo_diffs:
+        return 0, 0, 0, 0
+    return (
+        np.mean(elo_diffs),
+        np.percentile(elo_diffs, 25),
+        np.percentile(elo_diffs, 50),
+        np.percentile(elo_diffs, 75)
+    )
+
+def print_metrics(name, elo_diffs):
+    mean, q25, q50, q75 = calculate_metrics(elo_diffs)
+    print(f"[{name}]")
+    print(f"  Games: {len(elo_diffs)}")
+    print(f"  Mean:  {mean:.3f}")
+    print(f"  Q1/Q2/Q3: {q25:.3f} / {q50:.3f} / {q75:.3f}\n")
+
+def filter_by_truncation(games, max_drop_rate=0.20):
+    total_games = len(games)
+    keep_count = int(total_games * (1 - max_drop_rate))
+    
+    sorted_games = sorted(games, key=lambda g: g['diff'])
+    filtered_games = sorted_games[:keep_count]
+    
+    # Sort back by original index to keep original PGN order
+    filtered_games = sorted(filtered_games, key=lambda g: g['idx'])
+    return filtered_games
+
+def filter_by_distribution_matching(games, target_median=73.0, max_drop_rate=0.20):
+    total_games = len(games)
+    drop_budget = int(total_games * max_drop_rate)
+    
+    diffs = np.array([g['diff'] for g in games])
+    penalties = np.maximum(0, diffs - target_median)
+    
+    if penalties.sum() == 0:
+        return games
+        
+    drop_probabilities = penalties / penalties.sum()
+    drop_indices = set(np.random.choice(total_games, size=drop_budget, replace=False, p=drop_probabilities))
+    
+    return [g for i, g in enumerate(games) if i not in drop_indices]
+
+def get_elo(headers, color):
+    elo_str = headers.get(f"{color}Elo", "?")
+    try:
+        return int(elo_str)
+    except ValueError:
+        return None
+
+def main():
+    parser = argparse.ArgumentParser(description="Filter a PGN file to adjust Elo diff distribution.")
+    parser.add_argument("input_pgn", help="Path to input PGN file")
+    parser.add_argument("output_pgn", help="Path to output PGN file")
+    parser.add_argument("--strategy", choices=["truncation", "probabilistic"], default="probabilistic")
+    parser.add_argument("--drop-rate", type=float, default=0.20, help="Max fraction of games to drop (default: 0.20)")
+    args = parser.parse_args()
+
+    games_info = []
+    
+    # Parse games and record file offsets
+    with open(args.input_pgn, "r") as pgn:
+        idx = 0
+        while True:
+            offset = pgn.tell()
+            headers = chess.pgn.read_headers(pgn)
+            if headers is None:
+                break
+                
+            white_elo = get_elo(headers, "White")
+            black_elo = get_elo(headers, "Black")
+            
+            if white_elo is not None and black_elo is not None:
+                diff = abs(white_elo - black_elo)
+                games_info.append({"idx": idx, "offset": offset, "diff": diff, "valid": True})
+            else:
+                # Keep games without Elo but don't count them towards diff filtering
+                games_info.append({"idx": idx, "offset": offset, "diff": 0, "valid": False})
+            idx += 1
+
+    valid_games = [g for g in games_info if g["valid"]]
+    print_metrics("Original Dataset", [g["diff"] for g in valid_games])
+
+    if args.strategy == "truncation":
+        filtered_valid = filter_by_truncation(valid_games, max_drop_rate=args.drop_rate)
+    else:
+        filtered_valid = filter_by_distribution_matching(valid_games, target_median=73.0, max_drop_rate=args.drop_rate)
+
+    print_metrics("Filtered Dataset", [g["diff"] for g in filtered_valid])
+
+    # Reconstruct the list of games to write
+    valid_keep_set = set(g["idx"] for g in filtered_valid)
+    
+    with open(args.input_pgn, "r") as pgn_in, open(args.output_pgn, "w") as pgn_out:
+        for g in games_info:
+            if not g["valid"] or g["idx"] in valid_keep_set:
+                pgn_in.seek(g["offset"])
+                game = chess.pgn.read_game(pgn_in)
+                print(game, file=pgn_out, end="\n\n")
+
+if __name__ == "__main__":
+    main()
