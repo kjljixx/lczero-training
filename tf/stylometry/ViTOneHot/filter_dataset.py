@@ -2,6 +2,7 @@ import numpy as np
 import chess.pgn
 import argparse
 import os
+from tqdm import tqdm
 
 def calculate_metrics(elo_diffs):
     """Calculate mean and quartiles for the given list of absolute Elo differences."""
@@ -73,6 +74,7 @@ def main():
     # Parse games and record file offsets
     with open(args.input_pgn, "r") as pgn:
         idx = 0
+        pbar_read = tqdm(total=args.max_games, desc="Parsing headers")
         while True:
             if args.max_games is not None and idx >= args.max_games:
                 break
@@ -82,16 +84,21 @@ def main():
             if headers is None:
                 break
                 
+            next_offset = pgn.tell()
+                
             white_elo = get_elo(headers, "White")
             black_elo = get_elo(headers, "Black")
             
             if white_elo is not None and black_elo is not None:
                 diff = abs(white_elo - black_elo)
-                games_info.append({"idx": idx, "offset": offset, "diff": diff, "valid": True})
+                games_info.append({"idx": idx, "offset": offset, "length": next_offset - offset, "diff": diff, "valid": True})
             else:
                 # Keep games without Elo but don't count them towards diff filtering
-                games_info.append({"idx": idx, "offset": offset, "diff": 0, "valid": False})
+                games_info.append({"idx": idx, "offset": offset, "length": next_offset - offset, "diff": 0, "valid": False})
             idx += 1
+            pbar_read.update(1)
+            
+        pbar_read.close()
 
     valid_games = [g for g in games_info if g["valid"]]
     print_metrics("Original Dataset", [g["diff"] for g in valid_games])
@@ -107,11 +114,11 @@ def main():
     valid_keep_set = set(g["idx"] for g in filtered_valid)
     
     with open(args.input_pgn, "r") as pgn_in, open(args.output_pgn, "w") as pgn_out:
-        for g in games_info:
+        for g in tqdm(games_info, desc="Writing games"):
             if not g["valid"] or g["idx"] in valid_keep_set:
                 pgn_in.seek(g["offset"])
-                game = chess.pgn.read_game(pgn_in)
-                print(game, file=pgn_out, end="\n\n")
+                chunk = pgn_in.read(g["length"])
+                pgn_out.write(chunk)
 
 if __name__ == "__main__":
     main()
