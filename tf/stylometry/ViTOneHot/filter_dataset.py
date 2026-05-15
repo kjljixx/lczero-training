@@ -65,6 +65,7 @@ def main():
     parser.add_argument("--drop-rate", type=float, default=0.20, help="Max fraction of games to drop (default: 0.20)")
     parser.add_argument("--target-median", type=float, default=73.0, help="Target median for probabilistic matching (default: 73.0)")
     parser.add_argument("--increase-median", action="store_true", help="Increase the median instead of decreasing it")
+    parser.add_argument("--max-games", type=int, default=None, help="Maximum number of games to read from input (default: all)")
     args = parser.parse_args()
 
     games_info = []
@@ -73,6 +74,9 @@ def main():
     with open(args.input_pgn, "r") as pgn:
         idx = 0
         while True:
+            if args.max_games is not None and idx >= args.max_games:
+                break
+                
             offset = pgn.tell()
             headers = chess.pgn.read_headers(pgn)
             if headers is None:
@@ -111,3 +115,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+# python3 stylometry/ViTOneHot/filter_dataset.py stylometry/WinRateStylo/data/lichess-raw/lichess_db_standard_rated_2017-06.pgn stylometry/ViTOneHot/data/chess/big-filtered.pgn --strategy probabilistic --drop-rate 0.20 --target-median 152 --increase-median
