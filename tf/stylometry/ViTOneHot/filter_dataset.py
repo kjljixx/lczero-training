@@ -21,23 +21,26 @@ def print_metrics(name, elo_diffs):
     print(f"  Mean:  {mean:.3f}")
     print(f"  Q1/Q2/Q3: {q25:.3f} / {q50:.3f} / {q75:.3f}\n")
 
-def filter_by_truncation(games, max_drop_rate=0.20):
+def filter_by_truncation(games, max_drop_rate=0.20, increase_median=False):
     total_games = len(games)
     keep_count = int(total_games * (1 - max_drop_rate))
     
-    sorted_games = sorted(games, key=lambda g: g['diff'])
+    sorted_games = sorted(games, key=lambda g: g['diff'], reverse=increase_median)
     filtered_games = sorted_games[:keep_count]
     
     # Sort back by original index to keep original PGN order
     filtered_games = sorted(filtered_games, key=lambda g: g['idx'])
     return filtered_games
 
-def filter_by_distribution_matching(games, target_median=73.0, max_drop_rate=0.20):
+def filter_by_distribution_matching(games, target_median=73.0, max_drop_rate=0.20, increase_median=False):
     total_games = len(games)
     drop_budget = int(total_games * max_drop_rate)
     
     diffs = np.array([g['diff'] for g in games])
-    penalties = np.maximum(0, diffs - target_median)
+    if increase_median:
+        penalties = np.maximum(0, target_median - diffs)
+    else:
+        penalties = np.maximum(0, diffs - target_median)
     
     if penalties.sum() == 0:
         return games
@@ -60,6 +63,8 @@ def main():
     parser.add_argument("output_pgn", help="Path to output PGN file")
     parser.add_argument("--strategy", choices=["truncation", "probabilistic"], default="probabilistic")
     parser.add_argument("--drop-rate", type=float, default=0.20, help="Max fraction of games to drop (default: 0.20)")
+    parser.add_argument("--target-median", type=float, default=73.0, help="Target median for probabilistic matching (default: 73.0)")
+    parser.add_argument("--increase-median", action="store_true", help="Increase the median instead of decreasing it")
     args = parser.parse_args()
 
     games_info = []
@@ -88,9 +93,9 @@ def main():
     print_metrics("Original Dataset", [g["diff"] for g in valid_games])
 
     if args.strategy == "truncation":
-        filtered_valid = filter_by_truncation(valid_games, max_drop_rate=args.drop_rate)
+        filtered_valid = filter_by_truncation(valid_games, max_drop_rate=args.drop_rate, increase_median=args.increase_median)
     else:
-        filtered_valid = filter_by_distribution_matching(valid_games, target_median=73.0, max_drop_rate=args.drop_rate)
+        filtered_valid = filter_by_distribution_matching(valid_games, target_median=args.target_median, max_drop_rate=args.drop_rate, increase_median=args.increase_median)
 
     print_metrics("Filtered Dataset", [g["diff"] for g in filtered_valid])
 

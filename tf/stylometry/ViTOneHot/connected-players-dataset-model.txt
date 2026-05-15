@@ -103,6 +103,7 @@ actual\pred  1000-1199  1200-1399  1400-1599  1600-1799  1800-1999  2000-2199  2
 2200-2399            0          0          0          1          0          1        142         93
 2400-2599            0          0          1          0          2          0         58        156
 
+#small dataset, actual=ordo elos, predicted=model trained on player indices (not context games)
 Rescale predictions: False
 Actual mean Elo: 2310.864
 Raw predicted mean Elo: -23.390

@@ -1,0 +1,36 @@
+[Small Round Robin Dataset]
+  Games: 572
+  Mean:  162.706
+  Q1/Q2/Q3: 71.000 / 151.500 / 238.250
+
+Real dataset:
+actual_pair_mean_abs_diff=110.419 actual_pair_abs_diff_q25=30.000 actual_pair_abs_diff_q50=73.000 actual_pair_abs_diff_q75=151.000
+[Filtered Dataset]
+  Games: 344
+  Mean:  104.549
+  Q1/Q2/Q3: 39.750 / 86.000 / 153.000
+
+
+# NO Rescaling, BIG dataset
+Processed 800 batches (12800 player-samples). scale=1.000000 shift=1187.260 overall_bin_acc=0.2249 actual_pair_mean_abs_diff=109.199 actual_pair_abs_diff_q25=30.000 actual_pair_abs_diff_q50=72.000 actual_pair_abs_diff_q75=148.000 raw_mae=1187.309 raw_mse=1532836.681 norm_mae=278.977 norm_mse=123250.307
+Running per-bin accuracy (actual bin denominator):
+bin        count  accuracy
+1000-1199    825    0.0048
+1200-1399   1681    0.0369
+1400-1599   2969    0.3274
+1600-1799   3385    0.4331
+1800-1999   2557    0.1424
+2000-2199   1044    0.0105
+2200-2399    274    0.0000
+2400-2599     65    0.0000
+Running confusion matrix (rows=actual, cols=predicted):
+actual\pred  1000-1199  1200-1399  1400-1599  1600-1799  1800-1999  2000-2199  2200-2399  2400-2599
+1000-1199            4         24        130        356        278         30          3          0
+1200-1399            8         62        441        805        332         31          1          1
+1400-1599           15        136        972       1334        485         27          0          0
+1600-1799           11        227       1191       1466        464         26          0          0
+1800-1999            5        139        876       1154        364         19          0          0
+2000-2199            3         54        399        446        131         11          0          0
+2200-2399            0         25        100        128         19          2          0          0
+2400-2599            0          1         37         24          3          0          0          0
+
