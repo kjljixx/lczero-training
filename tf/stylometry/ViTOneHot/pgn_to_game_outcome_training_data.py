@@ -426,22 +426,24 @@ def process_pgns(
       white = player_mapper.get_or_create_index(game.headers["White"])
       black = player_mapper.get_or_create_index(game.headers["Black"])
       result = game.headers.get("Result", "*")
-      rand = random.random()
-      if (seq_counts.get(white, 0) < 5 or seq_counts.get(black, 0) < 5) and rand < 0.8:
-        game_data = extract_game_data(
-          game, player_mapper, max_moves
-        )
+      game_data = extract_game_data(
+        game, player_mapper, max_moves
+      )
+      if seq_counts.get(white, 0) < 5:
         if white in curr_sequences:
           curr_sequences[white].append(game_data[0][0])
         else:
           curr_sequences[white] = [game_data[0][0]]
+        seq_counts[white] = seq_counts.get(white, 0) + 1
+
+      if seq_counts.get(black, 0) < 5:
         if black in curr_sequences:
           curr_sequences[black].append(game_data[0][1])
         else:
           curr_sequences[black] = [game_data[0][1]]
-        seq_counts[white] = seq_counts.get(white, 0) + 1
         seq_counts[black] = seq_counts.get(black, 0) + 1
-      else:
+      
+      if seq_counts.get(white, 0) >= 5 and seq_counts.get(black, 0) >= 5:
         curr_results.append((white, black, [1, 0, 0] if result == "1-0" else [0, 0, 1] if result == "0-1" else [0, 1, 0],
                              game.headers["White"], game.headers["Black"]
                             ,int(game.headers.get("WhiteElo", "0")), int(game.headers.get("BlackElo", "0"))))
