@@ -295,7 +295,7 @@ def create_seq_dataset(
               'w': wdl_val.astype(np.float32),
               'e0': np.float32(stm_elo.numpy()),
               'e1': np.float32(opp_elo.numpy()),
-              'e_diff': np.float32(stm_elo.numpy() - opp_elo.numpy()),
+              'e_d': np.float32(stm_elo.numpy() - opp_elo.numpy()),
             }
           except Exception as e:
             print(f"Skipping corrupted record in {shard_path}: {e}")
@@ -321,7 +321,7 @@ def create_seq_dataset(
       'w': tf.TensorSpec(shape=(3,), dtype=tf.float32),     # type: ignore
       'e0': tf.TensorSpec(shape=(), dtype=tf.float32),      # type: ignore
       'e1': tf.TensorSpec(shape=(), dtype=tf.float32),      # type: ignore
-      'e_diff': tf.TensorSpec(shape=(), dtype=tf.float32),  # type: ignore
+      'e_d': tf.TensorSpec(shape=(), dtype=tf.float32),  # type: ignore
     }
   )
 
@@ -466,7 +466,7 @@ class GameOutcomePredictor(tf.keras.Model):
       'w': tf.stack([p_win, p_draw, p_loss], axis=-1),  # (batch, 3)
       'e0': elo0,  # (batch,)
       'e1': elo1,  # (batch,)
-      'e_diff': elo_diff,  # (batch,)
+      'e_d': elo_diff,  # (batch,)
     }
 
   def train_step(self, data):
@@ -784,8 +784,8 @@ def train_model(
   train_e0_m = _last_metric('e0_m', 'e0_mse', 'elo0_mse')
   train_e1_e = _last_metric('e1_e', 'e1_mae', 'elo1_mae')
   train_e1_m = _last_metric('e1_m', 'e1_mse', 'elo1_mse')
-  train_ed_e = _last_metric('e_diff_e')
-  train_ed_a = _last_metric('e_diff_a')
+  train_ed_e = _last_metric('e_d_e')
+  train_ed_a = _last_metric('e_d_a')
   if train_loss is not None:
     print(f"  Loss:       {train_loss:.2f}")
   if train_w_a is not None:
@@ -816,8 +816,8 @@ def train_model(
   val_e0_m = _last_metric('val_e0_m', 'val_e0_mse', 'val_elo0_mse')
   val_e1_e = _last_metric('val_e1_e', 'val_e1_mae', 'val_elo1_mae')
   val_e1_m = _last_metric('val_e1_m', 'val_e1_mse', 'val_elo1_mse')
-  val_ed_e = _last_metric('val_e_diff_e')
-  val_ed_a = _last_metric('val_e_diff_a')
+  val_ed_e = _last_metric('val_e_d_e')
+  val_ed_a = _last_metric('val_e_d_a')
   if val_loss is not None:
     print(f"  Loss:       {val_loss:.2f}")
   if val_w_a is not None:
