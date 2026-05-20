@@ -469,6 +469,18 @@ class GameOutcomePredictor(tf.keras.Model):
       'e_diff': elo_diff,  # (batch,)
     }
 
+  def train_step(self, data):
+    results = super().train_step(data)
+    if 'w_loss' in results:
+      del results['w_loss']
+    return results
+
+  def test_step(self, data):
+    results = super().test_step(data)
+    if 'w_loss' in results:
+      del results['w_loss']
+    return results
+
 
 class PeriodicSampleLogger(tf.keras.callbacks.Callback):
   def __init__(
@@ -683,7 +695,7 @@ def train_model(
       'w': [tf.keras.metrics.CategoricalAccuracy(name='a'), tf.keras.metrics.MeanSquaredError(name='m'), tf.keras.metrics.MeanAbsoluteError(name='e')],
       'e0': [tf.keras.metrics.MeanAbsoluteError(name='e'), tf.keras.metrics.MeanSquaredError(name='m')],
       'e1': [tf.keras.metrics.MeanAbsoluteError(name='e'), tf.keras.metrics.MeanSquaredError(name='m')],
-      'e_d': [StrengthDiffError(), StrengthDiffAbsError()],
+      'e_diff': [StrengthDiffError(), StrengthDiffAbsError()],
     }
   )
 
@@ -711,27 +723,16 @@ def train_model(
   except Exception as e:
     print(f"Pre-training validation failed: {e}")
 
-  class CustomLogger(tf.keras.callbacks.Callback):
+  class LearningRateLogger(tf.keras.callbacks.Callback):
     def __init__(self):
       super().__init__()
       self._supports_tf_logs = True
 
-    def on_train_batch_end(self, batch, logs=None):
-      if isinstance(logs, dict):
-        logs.pop('w_loss', None)
-
-    def on_test_batch_end(self, batch, logs=None):
-      if isinstance(logs, dict):
-        logs.pop('w_loss', None)
-
     def on_epoch_end(self, epoch, logs=None):
-      if logs is None or self.model is None or self.model.optimizer is None:
+      if logs is None or "learning_rate" in logs or self.model is None or self.model.optimizer is None:
         return
       if isinstance(logs, dict):
-        if "learning_rate" not in logs:
-          logs["learning_rate"] = self.model.optimizer.learning_rate
-        logs.pop('w_loss', None)
-        logs.pop('val_w_loss', None)
+        logs["learning_rate"] = self.model.optimizer.learning_rate
 
   callbacks = [
     tf.keras.callbacks.ModelCheckpoint(
@@ -739,7 +740,7 @@ def train_model(
       save_freq='epoch',
       verbose=1
     ),
-    CustomLogger(),
+    LearningRateLogger(),
     tf.keras.callbacks.TensorBoard(
       log_dir=os.path.join(output_dir, 'logs'),
       histogram_freq=0
