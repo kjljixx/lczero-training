@@ -295,6 +295,7 @@ def create_seq_dataset(
               'w': wdl_val.astype(np.float32),
               'e0': np.float32(stm_elo.numpy()),
               'e1': np.float32(opp_elo.numpy()),
+              'e_diff': np.float32(stm_elo.numpy() - opp_elo.numpy()),
             }
           except Exception as e:
             print(f"Skipping corrupted record in {shard_path}: {e}")
@@ -320,6 +321,7 @@ def create_seq_dataset(
       'w': tf.TensorSpec(shape=(3,), dtype=tf.float32),     # type: ignore
       'e0': tf.TensorSpec(shape=(), dtype=tf.float32),      # type: ignore
       'e1': tf.TensorSpec(shape=(), dtype=tf.float32),      # type: ignore
+      'e_diff': tf.TensorSpec(shape=(), dtype=tf.float32),  # type: ignore
     }
   )
 
@@ -464,6 +466,7 @@ class GameOutcomePredictor(tf.keras.Model):
       'w': tf.stack([p_win, p_draw, p_loss], axis=-1),  # (batch, 3)
       'e0': elo0,  # (batch,)
       'e1': elo1,  # (batch,)
+      'e_diff': elo_diff,  # (batch,)
     }
 
 
@@ -582,6 +585,36 @@ class PeriodicSampleLogger(tf.keras.callbacks.Callback):
     except Exception as e:
       print(f"Sample logging failed at batch {batch}: {e}")
 
+class StrengthDiffError(tf.keras.metrics.Metric):
+  def __init__(self, name='e', **kwargs):
+    super(StrengthDiffError, self).__init__(name=name, **kwargs)
+    self.total = self.add_weight(name='total', initializer='zeros')
+    self.count = self.add_weight(name='count', initializer='zeros')
+
+  def update_state(self, y_true, y_pred, sample_weight=None):
+    sign = tf.sign(y_true)
+    sign = tf.where(sign == 0.0, 1.0, sign)
+    error = sign * (y_pred - y_true)
+    self.total.assign_add(tf.reduce_sum(error))
+    self.count.assign_add(tf.cast(tf.shape(y_true)[0], tf.float32))
+
+  def result(self):
+    return tf.math.divide_no_nan(self.total, self.count)
+
+class StrengthDiffAbsError(tf.keras.metrics.Metric):
+  def __init__(self, name='a', **kwargs):
+    super(StrengthDiffAbsError, self).__init__(name=name, **kwargs)
+    self.total = self.add_weight(name='total', initializer='zeros')
+    self.count = self.add_weight(name='count', initializer='zeros')
+
+  def update_state(self, y_true, y_pred, sample_weight=None):
+    abs_error = tf.abs(y_pred - y_true)
+    self.total.assign_add(tf.reduce_sum(abs_error))
+    self.count.assign_add(tf.cast(tf.shape(y_true)[0], tf.float32))
+
+  def result(self):
+    return tf.math.divide_no_nan(self.total, self.count)
+
 def train_model(
   data_dir: str,
   output_dir: str,
@@ -650,6 +683,7 @@ def train_model(
       'w': [tf.keras.metrics.CategoricalAccuracy(name='a'), tf.keras.metrics.MeanSquaredError(name='m'), tf.keras.metrics.MeanAbsoluteError(name='e')],
       'e0': [tf.keras.metrics.MeanAbsoluteError(name='e'), tf.keras.metrics.MeanSquaredError(name='m')],
       'e1': [tf.keras.metrics.MeanAbsoluteError(name='e'), tf.keras.metrics.MeanSquaredError(name='m')],
+      'e_diff': [StrengthDiffError(), StrengthDiffAbsError()],
     }
   )
 
@@ -738,6 +772,8 @@ def train_model(
   train_e0_m = _last_metric('e0_m', 'e0_mse', 'elo0_mse')
   train_e1_e = _last_metric('e1_e', 'e1_mae', 'elo1_mae')
   train_e1_m = _last_metric('e1_m', 'e1_mse', 'elo1_mse')
+  train_ed_e = _last_metric('e_diff_e')
+  train_ed_a = _last_metric('e_diff_a')
   if train_loss is not None:
     print(f"  Loss:       {train_loss:.2f}")
   if train_w_a is not None:
@@ -754,6 +790,10 @@ def train_model(
     print(f"  E1 E:       {train_e1_e:.2f}")
   if train_e1_m is not None:
     print(f"  E1 M:       {train_e1_m:.2f}")
+  if train_ed_e is not None:
+    print(f"  ED E:       {train_ed_e:.2f}")
+  if train_ed_a is not None:
+    print(f"  ED A:       {train_ed_a:.2f}")
 
   print("Final Validation Metrics:")
   val_loss = _last_metric('val_loss')
@@ -764,6 +804,8 @@ def train_model(
   val_e0_m = _last_metric('val_e0_m', 'val_e0_mse', 'val_elo0_mse')
   val_e1_e = _last_metric('val_e1_e', 'val_e1_mae', 'val_elo1_mae')
   val_e1_m = _last_metric('val_e1_m', 'val_e1_mse', 'val_elo1_mse')
+  val_ed_e = _last_metric('val_e_diff_e')
+  val_ed_a = _last_metric('val_e_diff_a')
   if val_loss is not None:
     print(f"  Loss:       {val_loss:.2f}")
   if val_w_a is not None:
@@ -780,6 +822,10 @@ def train_model(
     print(f"  E1 E:       {val_e1_e:.2f}")
   if val_e1_m is not None:
     print(f"  E1 M:       {val_e1_m:.2f}")
+  if val_ed_e is not None:
+    print(f"  ED E:       {val_ed_e:.2f}")
+  if val_ed_a is not None:
+    print(f"  ED A:       {val_ed_a:.2f}")
 
   return model, history
 
