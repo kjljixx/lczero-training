@@ -693,8 +693,8 @@ def train_model(
     },
     metrics={
       'w': [tf.keras.metrics.CategoricalAccuracy(name='a'), tf.keras.metrics.MeanSquaredError(name='m'), tf.keras.metrics.MeanAbsoluteError(name='e')],
-      'e0': [tf.keras.metrics.MeanAbsoluteError(name='e'), tf.keras.metrics.MeanSquaredError(name='m')],
-      'e1': [tf.keras.metrics.MeanAbsoluteError(name='e'), tf.keras.metrics.MeanSquaredError(name='m')],
+      # 'e0': [tf.keras.metrics.MeanAbsoluteError(name='e'), tf.keras.metrics.MeanSquaredError(name='m')],
+      # 'e1': [tf.keras.metrics.MeanAbsoluteError(name='e'), tf.keras.metrics.MeanSquaredError(name='m')],
       'e_d': [StrengthDiffError(), StrengthDiffAbsError()],
     }
   )
