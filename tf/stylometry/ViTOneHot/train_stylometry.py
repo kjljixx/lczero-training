@@ -20,7 +20,7 @@ def _training_flag(training) -> bool:
 MAX_MOVES = 100
 NUM_GAMES = 5
 SEQ_PLANES = 21
-ELO_SCALE = 1 / 40
+ELO_SCALE = 40
 
 PIECE_SYMBOLS = {
   1: 'p',
@@ -294,9 +294,9 @@ def create_seq_dataset(
               'opp_player_elo': np.int64(opp_elo.numpy()),
             }, {
               'w': wdl_val.astype(np.float32),
-              'e0': np.float32(stm_elo.numpy()) * ELO_SCALE,
-              'e1': np.float32(opp_elo.numpy()) * ELO_SCALE,
-              'e_d': np.float32(stm_elo.numpy() - opp_elo.numpy()) * ELO_SCALE,
+              'e0': np.float32(stm_elo.numpy()),
+              'e1': np.float32(opp_elo.numpy()),
+              'e_d': np.float32(stm_elo.numpy() - opp_elo.numpy()),
             }
           except Exception as e:
             print(f"Skipping corrupted record in {shard_path}: {e}")
@@ -458,7 +458,7 @@ class GameOutcomePredictor(tf.keras.Model):
       elo1 = tf.reduce_mean(game_elo1, axis=-1)
 
     elo_diff = (elo0 - elo1) * ELO_SCALE
-    draw_margin = 21.57 * ELO_SCALE  # represent approx 0.062 win prob as found empirically
+    draw_margin = 21.57  # represent approx 0.062 win prob as found empirically
     # Convert elo difference to win/draw/loss probabilities using glicko 2. 0.9 represents typical rating deviation dampening
     p_win = 1 / (1 + tf.pow(10.0, 0.9 * (-elo_diff + draw_margin) / (400)))
     p_loss = 1 / (1 + tf.pow(10.0, 0.9 * (elo_diff + draw_margin) / (400)))
