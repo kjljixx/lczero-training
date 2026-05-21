@@ -15,11 +15,9 @@ if str(MODULE_DIR.parents[1]) not in sys.path:
 
 from stylometry.ViTOneHot.train_stylometry import (
     chessboard_struct_to_lc0_planes,
-    EloPredictor,
-    GameOutcomePredictor,
     SEQ_PLANES,
 )
-from stylometry.ViTOneHot.game_aggregate_vit import GameAggregateViT
+from stylometry.ViTOneHot.get_bin_accuracy import load_model, detect_model_kind
 
 # Constants matching the data generation script
 MAX_MOVES = 100
@@ -178,23 +176,8 @@ def main():
   model = None
   elo_predictor = None
   if args.model:
-    model_path = args.model
-    if not os.path.exists(model_path):
-      raise FileNotFoundError(f'Model path does not exist: {model_path}')
-    model = tf.keras.models.load_model(
-      model_path,
-      custom_objects={
-        'GameOutcomePredictor': GameOutcomePredictor,
-        'EloPredictor': EloPredictor,
-        'GameAggregateViT': GameAggregateViT,
-      },
-    )
-    if hasattr(model, 'elo_predictor') and callable(getattr(model, 'elo_predictor')):
-      elo_predictor = getattr(model, 'elo_predictor')
-    elif hasattr(model, 'vit') and hasattr(model, 'regression_head'):
-      elo_predictor = model
-    else:
-      raise ValueError('Unsupported model type.')
+    model = load_model(args.model)
+    _, elo_predictor = detect_model_kind(model)
 
   all_guesses = []
   all_actuals = []
