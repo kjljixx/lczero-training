@@ -112,13 +112,15 @@ def chessboard_struct_to_board(struct: np.ndarray) -> Optional[chess.Board]:
   
   return board
 
-def extract_pgn_sequence(game_data: np.ndarray) -> str:
+def extract_pgn_sequence(game_data: np.ndarray, flip: bool = False) -> str:
   valid_states = []
   for i in range(MAX_MOVES):
     if not np.any(game_data[i]):
       break
     state = chessboard_struct_to_board(game_data[i])
     if state:
+      if flip:
+        state = state.mirror()
       valid_states.append(state)
       
   if not valid_states:
@@ -290,7 +292,7 @@ def main():
       else:
         print("Error displaying board (empty struct)")
       
-      print("\nCommands: [n]ext move, [b]ack, [j] next game, [k] prev game, [c]opy PGN, [g]uess Elo, [q]uit")
+      print("\nCommands: [n]ext move, [b]ack, [j] next game, [k] prev game, [c]opy PGN, [f]lipped PGN, [g]uess Elo, [q]uit")
       print("> ", end="", flush=True)
       cmd = get_char()
       print(cmd) # Echo the command
@@ -306,6 +308,12 @@ def main():
         print("\n=== Extracted PGN Sequence ===\n")
         print(pgn_str)
         print("\n==============================")
+        input("\nPress Enter to continue...")
+      elif cmd == 'f':
+        pgn_str = extract_pgn_sequence(game_data, flip=True)
+        print("\n=== Extracted Flipped PGN Sequence ===\n")
+        print(pgn_str)
+        print("\n======================================")
         input("\nPress Enter to continue...")
       elif cmd == 'j':
         curr_game_idx = (curr_game_idx + 1) % len(valid_games)
