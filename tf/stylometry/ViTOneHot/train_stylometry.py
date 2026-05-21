@@ -598,6 +598,7 @@ class PeriodicSampleLogger(tf.keras.callbacks.Callback):
     except Exception as e:
       print(f"Sample logging failed at batch {batch}: {e}")
 
+@keras.saving.register_keras_serializable()
 class StrengthDiffError(tf.keras.metrics.Metric):
   def __init__(self, name='e', **kwargs):
     super(StrengthDiffError, self).__init__(name=name, **kwargs)
@@ -614,6 +615,7 @@ class StrengthDiffError(tf.keras.metrics.Metric):
   def result(self):
     return tf.math.divide_no_nan(self.total, self.count)
 
+@keras.saving.register_keras_serializable()
 class StrengthDiffAbsError(tf.keras.metrics.Metric):
   def __init__(self, name='a', **kwargs):
     super(StrengthDiffAbsError, self).__init__(name=name, **kwargs)
