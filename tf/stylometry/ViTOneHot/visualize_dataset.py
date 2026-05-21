@@ -141,10 +141,28 @@ def get_random_sequence(dataset_path: str):
 def clear_screen():
   os.system('cls' if os.name == 'nt' else 'clear')
 
+def get_char():
+  if os.name == 'nt':
+    import msvcrt
+    return msvcrt.getch().decode('utf-8', 'ignore').lower()
+  else:
+    import tty, termios
+    fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(fd)
+    try:
+      tty.setraw(sys.stdin.fileno())
+      ch = sys.stdin.read(1)
+    finally:
+      termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+    return ch.lower()
+
 def main():
   parser = argparse.ArgumentParser(description="Visualize stylometry dataset")
   parser.add_argument("dataset_path", help="Path to the dataset directory containing tfrecords")
   args = parser.parse_args()
+
+  all_guesses = []
+  all_actuals = []
 
   while True:
     data = get_random_sequence(args.dataset_path)
@@ -181,13 +199,17 @@ def main():
       if board:
         is_player_turn = board.turn == chess.WHITE
         turn_str = "PLAYER's turn (Guess THEIR Elo!)" if is_player_turn else "OPPONENT's turn"
-        print(f"[{turn_str}]")
-        print(board)
+        print(f"[{turn_str}]\n")
+        
+        # Make the board much prettier using unicode pieces mapping
+        print(board.unicode(empty_square="·"))
       else:
         print("Error displaying board (empty struct)")
       
       print("\nCommands: [n]ext move, [p]rev move, [j] next game, [k] prev game, [g]uess Elo, [q]uit")
-      cmd = input("> ").strip().lower()
+      print("> ", end="", flush=True)
+      cmd = get_char()
+      print(cmd) # Echo the command
       
       if cmd == 'n':
         if curr_move_idx < num_moves - 1:
@@ -202,9 +224,29 @@ def main():
         curr_game_idx = (curr_game_idx - 1) % len(valid_games)
         curr_move_idx = 0
       elif cmd == 'g':
-        guess = input("Enter your Elo guess: ")
+        guess_str = input("Enter your Elo guess: ")
+        try:
+          guess_elo = float(guess_str)
+        except ValueError:
+          print("Invalid Elo. Skipping this sequence without recording guess...")
+          input("\nPress Enter to continue to next sequence...")
+          break
+        
+        actual_elo = float(data['elo'])
+        all_guesses.append(guess_elo)
+        all_actuals.append(actual_elo)
+        
+        guesses_np = np.array(all_guesses)
+        actuals_np = np.array(all_actuals)
+        mae = np.mean(np.abs(guesses_np - actuals_np))
+        mse = np.mean(np.square(guesses_np - actuals_np))
+
         print(f"\nActual Player: {data['name']}")
         print(f"Actual Elo: {data['elo']}")
+        print(f"\n--- Stats over {len(all_guesses)} guesses ---")
+        print(f"MAE: {mae:.2f}")
+        print(f"MSE: {mse:.2f}")
+
         input("\nPress Enter to continue to next sequence...")
         break
       elif cmd == 'q':
