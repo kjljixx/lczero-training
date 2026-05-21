@@ -179,11 +179,14 @@ def main():
       
       print(f"Viewing Player Sequence (Game {curr_game_idx + 1}/{len(valid_games)}, Move {curr_move_idx + 1}/{num_moves})")
       if board:
+        is_player_turn = board.turn == chess.WHITE
+        turn_str = "PLAYER's turn (Guess THEIR Elo!)" if is_player_turn else "OPPONENT's turn"
+        print(f"[{turn_str}]")
         print(board)
       else:
         print("Error displaying board (empty struct)")
       
-      print("\nCommands: [n]ext move, [p]rev move, [N]ext game, [P]rev game, [g]uess Elo, [q]uit")
+      print("\nCommands: [n]ext move, [p]rev move, [j] next game, [k] prev game, [g]uess Elo, [q]uit")
       cmd = input("> ").strip().lower()
       
       if cmd == 'n':
@@ -192,17 +195,10 @@ def main():
       elif cmd == 'p':
         if curr_move_idx > 0:
           curr_move_idx -= 1
-      elif cmd == 'next': # Shift+N usually. Use 'j'/'k' maybe? Let's stick to N/P
-        pass
-      elif cmd == 'n' or cmd == 'N': # input().lower() makes it 'n'
-        # Ambiguity with next move. Let's use 'j' for next game, 'k' for prev game as common shortcuts
-        pass
-      
-      # Re-doing command logic for clarity
-      if cmd == 'j': # Next game
+      elif cmd == 'j':
         curr_game_idx = (curr_game_idx + 1) % len(valid_games)
         curr_move_idx = 0
-      elif cmd == 'k': # Prev game
+      elif cmd == 'k':
         curr_game_idx = (curr_game_idx - 1) % len(valid_games)
         curr_move_idx = 0
       elif cmd == 'g':
@@ -213,14 +209,6 @@ def main():
         break
       elif cmd == 'q':
         sys.exit(0)
-      
-      # Handle 'n' and 'p' specifically
-      if cmd == 'n':
-        if curr_move_idx < num_moves - 1:
-          curr_move_idx += 1
-      elif cmd == 'p':
-        if curr_move_idx > 0:
-          curr_move_idx -= 1
 
 if __name__ == "__main__":
   main()
