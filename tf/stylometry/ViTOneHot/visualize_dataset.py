@@ -1,10 +1,11 @@
+import os
+os.environ["TF_USE_LEGACY_KERAS"] = "1"
 import tensorflow as tf
 import numpy as np
 import chess
 import chess.svg
 import argparse
 import random
-import os
 import sys
 from pathlib import Path
 from typing import List, Tuple, Optional
