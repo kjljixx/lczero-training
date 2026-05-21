@@ -172,6 +172,7 @@ def main():
   parser = argparse.ArgumentParser(description="Visualize stylometry dataset")
   parser.add_argument("dataset_path", help="Path to the dataset directory containing tfrecords")
   parser.add_argument("--model", type=str, help="Path to the keras model to evaluate Elo")
+  parser.add_argument("--shift", type=float, default=0.0, help="Amount to shift the model's Elo prediction")
   args = parser.parse_args()
 
   model = None
@@ -220,7 +221,7 @@ def main():
       game_elo = elo_predictor({'seq': flat_seq, 'mask': flat_mask}, training=False)
       game_elo = tf.reshape(game_elo, [1, NUM_GAMES])
       # Since we only put it in index 0
-      model_elo_pred = float(game_elo[0, 0])
+      model_elo_pred = float(game_elo[0, 0]) + args.shift
 
     curr_game_idx = 0
     curr_move_idx = 0
