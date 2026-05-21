@@ -465,8 +465,8 @@ class GameOutcomePredictor(tf.keras.Model):
     p_draw = 1 - p_win - p_loss
     return {
       'w': tf.stack([p_win, p_draw, p_loss], axis=-1),  # (batch, 3)
-      'e0': elo0,  # (batch,)
-      'e1': elo1,  # (batch,)
+      'e0': elo0 * ELO_SCALE,  # (batch,)
+      'e1': elo1 * ELO_SCALE,  # (batch,)
       'e_d': elo_diff,  # (batch,)
     }
 
