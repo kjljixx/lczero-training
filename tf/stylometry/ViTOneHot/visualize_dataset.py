@@ -4,6 +4,7 @@ import tensorflow as tf
 import numpy as np
 import chess
 import chess.svg
+import chess.pgn
 import argparse
 import random
 import sys
@@ -110,6 +111,47 @@ def chessboard_struct_to_board(struct: np.ndarray) -> Optional[chess.Board]:
   if them_qs: board.castling_rights |= chess.BB_A8
   
   return board
+
+def extract_pgn_sequence(game_data: np.ndarray) -> str:
+  valid_states = []
+  for i in range(MAX_MOVES):
+    if not np.any(game_data[i]):
+      break
+    state = chessboard_struct_to_board(game_data[i])
+    if state:
+      valid_states.append(state)
+      
+  if not valid_states:
+    return ""
+    
+  board = valid_states[0].copy()
+  game = chess.pgn.Game()
+  game.setup(board)
+  
+  node = game
+  
+  for next_state in valid_states[1:]:
+    found_move = None
+    target_map = next_state.piece_map()
+    
+    # Try all legal moves to see which one results in the exact same piece placement
+    for move in board.legal_moves:
+      board.push(move)
+      if board.piece_map() == target_map:
+        found_move = move
+        board.pop()
+        break
+      board.pop()
+      
+    if found_move:
+      node = node.add_variation(found_move)
+      board.push(found_move)
+    else:
+      # If we can't deduce the move (e.g. slight discrepancy in castling rights reconstructed), break
+      break 
+
+  exporter = chess.pgn.StringExporter(headers=True, variations=False)
+  return game.accept(exporter)
 
 def parse_tfrecord(example_proto):
   feature_description = {
@@ -248,7 +290,7 @@ def main():
       else:
         print("Error displaying board (empty struct)")
       
-      print("\nCommands: [n]ext move, [b]ack, [j] next game, [k] prev game, [g]uess Elo, [q]uit")
+      print("\nCommands: [n]ext move, [b]ack, [j] next game, [k] prev game, [c]opy PGN, [g]uess Elo, [q]uit")
       print("> ", end="", flush=True)
       cmd = get_char()
       print(cmd) # Echo the command
@@ -259,6 +301,12 @@ def main():
       elif cmd == 'b':
         if curr_move_idx > 0:
           curr_move_idx -= 1
+      elif cmd == 'c':
+        pgn_str = extract_pgn_sequence(game_data)
+        print("\n=== Extracted PGN Sequence ===\n")
+        print(pgn_str)
+        print("\n==============================")
+        input("\nPress Enter to continue...")
       elif cmd == 'j':
         curr_game_idx = (curr_game_idx + 1) % len(valid_games)
         curr_move_idx = 0
