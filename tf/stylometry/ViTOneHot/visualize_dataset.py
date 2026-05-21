@@ -206,7 +206,7 @@ def main():
       else:
         print("Error displaying board (empty struct)")
       
-      print("\nCommands: [n]ext move, [p]rev move, [j] next game, [k] prev game, [g]uess Elo, [q]uit")
+      print("\nCommands: [n]ext move, [b]ack, [j] next game, [k] prev game, [g]uess Elo, [q]uit")
       print("> ", end="", flush=True)
       cmd = get_char()
       print(cmd) # Echo the command
@@ -214,7 +214,7 @@ def main():
       if cmd == 'n':
         if curr_move_idx < num_moves - 1:
           curr_move_idx += 1
-      elif cmd == 'p':
+      elif cmd == 'b':
         if curr_move_idx > 0:
           curr_move_idx -= 1
       elif cmd == 'j':
