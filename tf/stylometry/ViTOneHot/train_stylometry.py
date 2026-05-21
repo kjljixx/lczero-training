@@ -708,6 +708,18 @@ def train_model(
   })
 
   print("Running pre-training validation...")
+  for inputs, labels in val_dataset.take(1):
+    model_inputs = {
+      'seq0': inputs['seq0'],
+      'seq1': inputs['seq1'],
+      'mask0': inputs['mask0'],
+      'mask1': inputs['mask1'],
+    }
+    preds = model(model_inputs, training=False)
+    print("Pre-training 1 batch of Elo predictions:")
+    print("e0:", preds['e0'].numpy())
+    print("e1:", preds['e1'].numpy())
+
   try:
     pre_val_metrics = model.evaluate(
       val_dataset,
