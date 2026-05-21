@@ -6,7 +6,20 @@ import argparse
 import random
 import os
 import sys
+from pathlib import Path
 from typing import List, Tuple, Optional
+
+MODULE_DIR = Path(__file__).resolve().parent
+if str(MODULE_DIR.parents[1]) not in sys.path:
+    sys.path.insert(0, str(MODULE_DIR.parents[1]))
+
+from stylometry.ViTOneHot.train_stylometry import (
+    chessboard_struct_to_lc0_planes,
+    EloPredictor,
+    GameOutcomePredictor,
+    SEQ_PLANES,
+)
+from stylometry.ViTOneHot.game_aggregate_vit import GameAggregateViT
 
 # Constants matching the data generation script
 MAX_MOVES = 100
@@ -159,10 +172,33 @@ def get_char():
 def main():
   parser = argparse.ArgumentParser(description="Visualize stylometry dataset")
   parser.add_argument("dataset_path", help="Path to the dataset directory containing tfrecords")
+  parser.add_argument("--model", type=str, help="Path to the keras model to evaluate Elo")
   args = parser.parse_args()
+
+  model = None
+  elo_predictor = None
+  if args.model:
+    model_path = args.model
+    if not os.path.exists(model_path):
+      raise FileNotFoundError(f'Model path does not exist: {model_path}')
+    model = tf.keras.models.load_model(
+      model_path,
+      custom_objects={
+        'GameOutcomePredictor': GameOutcomePredictor,
+        'EloPredictor': EloPredictor,
+        'GameAggregateViT': GameAggregateViT,
+      },
+    )
+    if hasattr(model, 'elo_predictor') and callable(getattr(model, 'elo_predictor')):
+      elo_predictor = getattr(model, 'elo_predictor')
+    elif hasattr(model, 'vit') and hasattr(model, 'regression_head'):
+      elo_predictor = model
+    else:
+      raise ValueError('Unsupported model type.')
 
   all_guesses = []
   all_actuals = []
+  all_model_guesses = []
 
   while True:
     data = get_random_sequence(args.dataset_path)
@@ -170,16 +206,37 @@ def main():
       break
     
     games = data['seq']
-    num_games_present = 0
     valid_games = []
     for g_idx in range(NUM_GAMES):
       # A game is valid if it has at least one non-zero move
       if np.any(games[g_idx]):
         valid_games.append(games[g_idx])
+        break # Only take the first game
     
     if not valid_games:
       print("Found a sequence with no valid games, skipping...")
       continue
+
+    # Prepare features for the model if needed
+    model_elo_pred = None
+    if elo_predictor is not None:
+      planes = np.zeros((1, NUM_GAMES, MAX_MOVES, SEQ_PLANES, 8, 8), dtype=np.float32)
+      mask = np.zeros((1, NUM_GAMES, MAX_MOVES), dtype=np.float32)
+      # We evaluate the entire sequence of 1 game that we just picked (or whatever is in valid_games)
+      # Or actually we can just pass the first game in index 0 of the model. 
+      for m_idx in range(MAX_MOVES):
+        struct = valid_games[0][m_idx]
+        if np.any(struct > 0):
+          p, _ = chessboard_struct_to_lc0_planes(struct, short=True)
+          planes[0, 0, m_idx] = p.astype(np.float32)
+          mask[0, 0, m_idx] = 1.0
+
+      flat_seq = tf.reshape(tf.convert_to_tensor(planes), [1 * NUM_GAMES, MAX_MOVES, SEQ_PLANES, 8, 8])
+      flat_mask = tf.reshape(tf.convert_to_tensor(mask), [1 * NUM_GAMES, MAX_MOVES])
+      game_elo = elo_predictor({'seq': flat_seq, 'mask': flat_mask}, training=False)
+      game_elo = tf.reshape(game_elo, [1, NUM_GAMES])
+      # Since we only put it in index 0
+      model_elo_pred = float(game_elo[0, 0])
 
     curr_game_idx = 0
     curr_move_idx = 0
@@ -243,9 +300,21 @@ def main():
 
         print(f"\nActual Player: {data['name']}")
         print(f"Actual Elo: {data['elo']}")
+        
+        if elo_predictor is not None and model_elo_pred is not None:
+          all_model_guesses.append(model_elo_pred)
+          model_guesses_np = np.array(all_model_guesses)
+          model_mae = np.mean(np.abs(model_guesses_np - actuals_np))
+          model_mse = np.mean(np.square(model_guesses_np - actuals_np))
+          print(f"\nModel Guess: {model_elo_pred:.1f}")
+
         print(f"\n--- Stats over {len(all_guesses)} guesses ---")
-        print(f"MAE: {mae:.2f}")
-        print(f"MSE: {mse:.2f}")
+        print(f"Your MAE: {mae:.2f}")
+        print(f"Your MSE: {mse:.2f}")
+        
+        if elo_predictor is not None and model_elo_pred is not None:
+          print(f"Model MAE: {model_mae:.2f}")
+          print(f"Model MSE: {model_mse:.2f}")
 
         input("\nPress Enter to continue to next sequence...")
         break
