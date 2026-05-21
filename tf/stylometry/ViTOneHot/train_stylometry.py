@@ -393,7 +393,7 @@ class EloPredictor(tf.keras.Model):
 
     is_training = _training_flag(training)
     embedding = self.vit(seq, training=is_training, mask=m)  # (batch, hidden_dim)
-    elo = self.regression_head(embedding, training=is_training)  # (batch, 1)
+    elo = self.regression_head(embedding, training=is_training) * ELO_SCALE  # (batch, 1)
     return tf.squeeze(elo, axis=-1)  # (batch,)
 
 @tf.keras.utils.register_keras_serializable()
@@ -457,7 +457,7 @@ class GameOutcomePredictor(tf.keras.Model):
     else:
       elo1 = tf.reduce_mean(game_elo1, axis=-1)
 
-    elo_diff = (elo0 - elo1) * ELO_SCALE
+    elo_diff = (elo0 - elo1)
     draw_margin = 21.57  # represent approx 0.062 win prob as found empirically
     # Convert elo difference to win/draw/loss probabilities using glicko 2. 0.9 represents typical rating deviation dampening
     p_win = 1 / (1 + tf.pow(10.0, 0.9 * (-elo_diff + draw_margin) / (400)))
@@ -465,8 +465,8 @@ class GameOutcomePredictor(tf.keras.Model):
     p_draw = 1 - p_win - p_loss
     return {
       'w': tf.stack([p_win, p_draw, p_loss], axis=-1),  # (batch, 3)
-      'e0': elo0 * ELO_SCALE,  # (batch,)
-      'e1': elo1 * ELO_SCALE,  # (batch,)
+      'e0': elo0,  # (batch,)
+      'e1': elo1,  # (batch,)
       'e_d': elo_diff,  # (batch,)
     }
 
