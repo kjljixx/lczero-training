@@ -720,6 +720,7 @@ def train_model(
     print("e0:", preds['e0'].numpy())
     print("e1:", preds['e1'].numpy())
     print("e_d:", preds['e_d'].numpy())
+    print("e_d_true:", labels['e_d'].numpy())
 
   try:
     pre_val_metrics = model.evaluate(
