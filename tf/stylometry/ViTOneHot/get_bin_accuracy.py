@@ -112,6 +112,7 @@ def _predict_player_elos(
 ) -> tf.Tensor:
 	batch_size = tf.shape(seq)[0]
 	seq = seq[:, :1, :, :, :]
+	mask = mask[:, :1, :]
 	flat_seq = tf.reshape(
 		seq,
 		[batch_size * NUM_GAMES, MAX_MOVES, SEQ_PLANES, 8, 8],
