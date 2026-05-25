@@ -422,6 +422,8 @@ def process_pgns(
 
       if len(list(game.mainline())) < min_moves*2:
         continue
+
+      NUM_GAMES = 20
       
       white = player_mapper.get_or_create_index(game.headers["White"])
       black = player_mapper.get_or_create_index(game.headers["Black"])
@@ -429,21 +431,21 @@ def process_pgns(
       game_data = extract_game_data(
         game, player_mapper, max_moves
       )
-      if seq_counts.get(white, 0) < 5:
+      if seq_counts.get(white, 0) < NUM_GAMES:
         if white in curr_sequences:
           curr_sequences[white].append(game_data[0][0])
         else:
           curr_sequences[white] = [game_data[0][0]]
         seq_counts[white] = seq_counts.get(white, 0) + 1
 
-      if seq_counts.get(black, 0) < 5:
+      if seq_counts.get(black, 0) < NUM_GAMES:
         if black in curr_sequences:
           curr_sequences[black].append(game_data[0][1])
         else:
           curr_sequences[black] = [game_data[0][1]]
         seq_counts[black] = seq_counts.get(black, 0) + 1
       
-      if seq_counts.get(white, 0) >= 5 and seq_counts.get(black, 0) >= 5:
+      if seq_counts.get(white, 0) >= NUM_GAMES and seq_counts.get(black, 0) >= NUM_GAMES:
         curr_results.append((white, black, [1, 0, 0] if result == "1-0" else [0, 0, 1] if result == "0-1" else [0, 1, 0],
                              game.headers["White"], game.headers["Black"]
                             ,int(game.headers.get("WhiteElo", "0")), int(game.headers.get("BlackElo", "0"))))
@@ -453,7 +455,7 @@ def process_pgns(
           nonlocal has_seq_pos_count, total_seq_pos_count
           num_in_0 = 0
           num_in_1 = 0
-          NUM_GAMES = 5
+          NUM_GAMES = 20
           if pos[0] in curr_sequences:
             num_in_0 = min(NUM_GAMES, len(curr_sequences[pos[0]]))
             has_seq_pos_count += num_in_0
@@ -493,7 +495,7 @@ def save_shard(shard_path, items, serialize_function):
   logger.info(f"Saved shard to {shard_path}")
 
 def serialize_position(paired_position):
-  def pad_and_flatten(games, max_games=5, max_moves=100):
+  def pad_and_flatten(games, max_games=20, max_moves=100):
     all_game_moves = np.zeros((max_games, max_moves, 5), dtype=np.uint64)
     for i, game in enumerate(games[:max_games]):
       if not game:
