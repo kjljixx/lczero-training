@@ -136,7 +136,7 @@ def _predict_player_elos(
       tf.reduce_sum(game_valid, axis=-1),
     )
   except Exception as e:
-		print(f"Error during prediction: {e}")
+    print(f"Error during prediction: {e}")
 
 
 def elo_to_bin_index(elo: float) -> int:
