@@ -18,6 +18,7 @@ def _training_flag(training) -> bool:
 
 
 MAX_MOVES = 100
+NUM_GAMES_MODEL = 1
 NUM_GAMES = 20
 SEQ_PLANES = 21
 ELO_SCALE = 4000
@@ -423,21 +424,21 @@ class GameOutcomePredictor(tf.keras.Model):
 
     # Predict Elo per game, then average over valid games for each player.
     batch_size = tf.shape(seq0)[0]
-    flat_seq0 = tf.reshape(seq0, [batch_size * NUM_GAMES, MAX_MOVES, SEQ_PLANES, 8, 8])
-    flat_seq1 = tf.reshape(seq1, [batch_size * NUM_GAMES, MAX_MOVES, SEQ_PLANES, 8, 8])
+    flat_seq0 = tf.reshape(seq0, [batch_size * NUM_GAMES_MODEL, MAX_MOVES, SEQ_PLANES, 8, 8])
+    flat_seq1 = tf.reshape(seq1, [batch_size * NUM_GAMES_MODEL, MAX_MOVES, SEQ_PLANES, 8, 8])
 
     flat_mask0 = None
     flat_mask1 = None
     if mask0 is not None:
-      flat_mask0 = tf.reshape(mask0, [batch_size * NUM_GAMES, MAX_MOVES])
+      flat_mask0 = tf.reshape(mask0, [batch_size * NUM_GAMES_MODEL, MAX_MOVES])
     if mask1 is not None:
-      flat_mask1 = tf.reshape(mask1, [batch_size * NUM_GAMES, MAX_MOVES])
+      flat_mask1 = tf.reshape(mask1, [batch_size * NUM_GAMES_MODEL, MAX_MOVES])
 
     game_elo0 = self.elo_predictor({'seq': flat_seq0, 'mask': flat_mask0}, training=is_training)
     game_elo1 = self.elo_predictor({'seq': flat_seq1, 'mask': flat_mask1}, training=is_training)
 
-    game_elo0 = tf.reshape(game_elo0, [batch_size, NUM_GAMES])
-    game_elo1 = tf.reshape(game_elo1, [batch_size, NUM_GAMES])
+    game_elo0 = tf.reshape(game_elo0, [batch_size, NUM_GAMES_MODEL])
+    game_elo1 = tf.reshape(game_elo1, [batch_size, NUM_GAMES_MODEL])
 
     if mask0 is not None:
       game_valid0 = tf.cast(tf.reduce_any(mask0 > 0.0, axis=-1), dtype=game_elo0.dtype)
