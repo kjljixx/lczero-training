@@ -440,6 +440,7 @@ def main() -> None:
 
 	print(f'Loaded model from: {args.model_path}')
 	print(f'Detected model type: {model_kind}')
+	print(f"Using {NUM_GAMES} games per player.")
 	if model_kind == 'game_outcome_predictor':
 		print('Using extracted inner Elo predictor for evaluation.')
 
