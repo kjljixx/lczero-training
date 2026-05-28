@@ -29,7 +29,6 @@ from stylometry.ViTOneHot.train_stylometry import (
 
 NUM_GAMES = 5
 
-
 BIN_LABELS = [
 	'1000-1199',
 	'1200-1399',
@@ -118,6 +117,7 @@ def _predict_player_elos(
       seq,
       [batch_size * NUM_GAMES, MAX_MOVES, SEQ_PLANES, 8, 8],
     )
+		print(mask.shape)
     flat_mask = None
     if mask is not None:
       flat_mask = tf.reshape(mask, [-1, MAX_MOVES])
