@@ -18,7 +18,7 @@ def _training_flag(training) -> bool:
 
 
 MAX_MOVES = 100
-NUM_GAMES_MODEL = 1
+NUM_GAMES_MODEL = 5
 NUM_GAMES = 20
 SEQ_PLANES = 21
 ELO_SCALE = 4000
