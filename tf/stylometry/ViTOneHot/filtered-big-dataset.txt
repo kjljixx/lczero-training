@@ -69,3 +69,66 @@ actual\pred  1000-1199  1200-1399  1400-1599  1600-1799  1800-1999  2000-2199  2
 2000-2199            0          0         10        174          0          0          0          0
 2200-2399            0          0          2         36          0          0          0          0
 2400-2599            0          0          0          7          0          0          0          0
+
+Epoch 1: saving model to stylometry/ViTOneHot/models/run2026-05-15-filtered-top-players-20/checkpoint_epoch_01.keras
+5000/5000 [==============================] - 2907s 563ms/step - loss: 0.8405 - e_d_e: -191.5744 - e_d_a: 191.9771 - w_a: 0.5079 - w_m: 0.1796 - w_e: 0.3628 - val_loss: 0.8345 - val_e_d_e: -172.8521 - val_e_d_a: 173.6447 - val_w_a: 0.5173 - val_w_m: 0.1784 - val_w_e: 0.3613 - learning_rate: 1.0000e-04
+
+Epoch 20/500
+5000/5000 [==============================] - ETA: 0s - loss: 0.8003 - e_d_e: -112.4937 - e_d_a: 133.9902 - w_a: 0.5912 - w_m: 0.1674 - w_e: 0.3366
+Epoch 20: saving model to stylometry/ViTOneHot/models/run2026-05-15-filtered-top-players-20/checkpoint_epoch_20.keras
+5000/5000 [==============================] - 2808s 562ms/step - loss: 0.8003 - e_d_e: -112.4937 - e_d_a: 133.9902 - w_a: 0.5912 - w_m: 0.1674 - w_e: 0.3366 - val_loss: 0.8060 - val_e_d_e: -131.9715 - val_e_d_a: 146.4428 - val_w_a: 0.5744 - val_w_m: 0.
+
+Now scale elo up:
+5000/5000 [==============================] - ETA: 0s - loss: 0.8000 - e_d_e: -125.4878 - e_d_a: 143.5683 - w_a: 0.5863 - w_m: 0.1681 - w_e: 0.3391
+Epoch 5: saving model to stylometry/ViTOneHot/models/run2026-05-15-filtered-top-players-20/checkpoint_epoch_05.keras
+5000/5000 [==============================] - 2814s 563ms/step - loss: 0.8000 - e_d_e: -125.4878 - e_d_a: 143.5683 - w_a: 0.5863 - w_m: 0.1681 - w_e: 0.3391 - val_loss: 0.8120 - val_e_d_e: -109.7529 - val_e_d_a: 149.7370 - val_w_a: 0.5825 - val_w_m: 0.1713 - val_w_e: 0.3334 - learning_rate: 1.0000e-04
+
+Processed 1400 batches (22400 player-samples). scale=1.000000 shift=1175.266 overall_bin_acc=0.3365 actual_pair_mean_abs_diff=110.798 actual_pair_abs_diff_q25=30.000 actual_pair_abs_diff_q50=73.000 actual_pair_abs_diff_q75=152.000 raw_mae=1175.266 raw_mse=1433919.494 norm_mae=181.789 norm_mse=52670.258
+Running per-bin accuracy (actual bin denominator):
+bin        count  accuracy
+1000-1199   1377    0.0007
+1200-1399   2950    0.0590
+1400-1599   5214    0.4553
+1600-1799   5975    0.6952
+1800-1999   4533    0.1820
+2000-2199   1836    0.0054
+2200-2399    423    0.0000
+2400-2599     92    0.0000
+Running confusion matrix (rows=actual, cols=predicted):
+actual\pred  1000-1199  1200-1399  1400-1599  1600-1799  1800-1999  2000-2199  2200-2399  2400-2599
+1000-1199            1        223        903        242          6          2          0          0
+1200-1399            0        174       1763        988         25          0          0          0
+1400-1599            4         88       2374       2627        121          0          0          0
+1600-1799            0         25       1376       4154        419          1          0          0
+1800-1999            0          5        437       3266        825          0          0          0
+2000-2199            0          1         66       1118        641         10          0          0
+2200-2399            0          0          8        221        193          1          0          0
+2400-2599            0          0          0         40         52          0          0          0
+
+1 context game:
+Processed 100 batches (1600 player-samples). scale=1.527653 shift=909.593 overall_bin_acc=0.2469 actual_pair_mean_abs_diff=97.044 actual_pair_abs_diff_q25=22.000 actual_pair_abs_diff_q50=61.000 actual_pair_abs_diff_q75=124.000 raw_mae=1152.641 raw_mse=1404408.129 norm_mae=252.893 norm_mse=100723.909
+Running per-bin accuracy (actual bin denominator):
+bin        count  accuracy
+1000-1199    141    0.2270
+1200-1399    238    0.2395
+1400-1599    397    0.2771
+1600-1799    392    0.2628
+1800-1999    291    0.2509
+2000-2199    114    0.1667
+2200-2399     24    0.0417
+2400-2599      3    0.0000
+Running confusion matrix (rows=actual, cols=predicted):
+actual\pred  1000-1199  1200-1399  1400-1599  1600-1799  1800-1999  2000-2199  2200-2399  2400-2599
+1000-1199           32         37         38         22         10          2          0          0
+1200-1399           41         57         60         43         29          8          0          0
+1400-1599           34         71        110        107         56         16          3          0
+1600-1799           15         46         98        103         92         30          8          0
+1800-1999            8         34         55         80         73         33          7          1
+2000-2199            0          6         19         30         33         19          5          2
+2200-2399            0          2          3          5          8          5          1          0
+2400-2599            0          0          0          2          0          1          0          0
+
+Your MAE: 305.17
+Your MSE: 183364.83
+Model MAE: 284.29
+Model MSE: 108337.50
