@@ -110,30 +110,33 @@ def _predict_player_elos(
 	seq: tf.Tensor,
 	mask: Optional[tf.Tensor],
 ) -> tf.Tensor:
-	batch_size = tf.shape(seq)[0]
-	seq = seq[:, :NUM_GAMES, :, :, :]
-	mask = mask[:, :NUM_GAMES, :]
-	flat_seq = tf.reshape(
-		seq,
-		[batch_size * NUM_GAMES, MAX_MOVES, SEQ_PLANES, 8, 8],
-	)
-	flat_mask = None
-	print(mask.shape)
-	if mask is not None:
-		flat_mask = tf.reshape(mask, [-1, MAX_MOVES])
+  try:
+    batch_size = tf.shape(seq)[0]
+    seq = seq[:, :NUM_GAMES, :, :, :]
+    mask = mask[:, :NUM_GAMES, :]
+    flat_seq = tf.reshape(
+      seq,
+      [batch_size * NUM_GAMES, MAX_MOVES, SEQ_PLANES, 8, 8],
+    )
+    flat_mask = None
+    print(mask.shape)
+    if mask is not None:
+      flat_mask = tf.reshape(mask, [-1, MAX_MOVES])
 
-	game_elo = elo_predictor({'seq': flat_seq, 'mask': flat_mask}, training=False)
-	game_elo = tf.reshape(game_elo, [batch_size, NUM_GAMES])
+    game_elo = elo_predictor({'seq': flat_seq, 'mask': flat_mask}, training=False)
+    game_elo = tf.reshape(game_elo, [batch_size, NUM_GAMES])
 
-	if mask is None:
-		return tf.reduce_mean(game_elo, axis=-1)
+    if mask is None:
+      return tf.reduce_mean(game_elo, axis=-1)
 
-	mask_positive = tf.math.greater(mask, tf.zeros_like(mask))
-	game_valid = tf.cast(tf.reduce_any(mask_positive, axis=-1), dtype=game_elo.dtype)
-	return tf.math.divide_no_nan(
-		tf.reduce_sum(game_elo * game_valid, axis=-1),
-		tf.reduce_sum(game_valid, axis=-1),
-	)
+    mask_positive = tf.math.greater(mask, tf.zeros_like(mask))
+    game_valid = tf.cast(tf.reduce_any(mask_positive, axis=-1), dtype=game_elo.dtype)
+    return tf.math.divide_no_nan(
+      tf.reduce_sum(game_elo * game_valid, axis=-1),
+      tf.reduce_sum(game_valid, axis=-1),
+    )
+  except Exception as e:
+		print(f"Error during prediction: {e}")
 
 
 def elo_to_bin_index(elo: float) -> int:
