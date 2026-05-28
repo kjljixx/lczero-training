@@ -27,7 +27,7 @@ from stylometry.ViTOneHot.train_stylometry import (
 	create_seq_dataset,
 )
 
-NUM_GAMES = 1
+NUM_GAMES = 20
 
 
 BIN_LABELS = [
