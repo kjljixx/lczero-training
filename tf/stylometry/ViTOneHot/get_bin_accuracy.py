@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, cast
 
 import numpy as np
+import matplotlib.pyplot as plt
 
 os.environ.setdefault('TF_USE_LEGACY_KERAS', '1')
 import tensorflow as tf
@@ -55,6 +56,8 @@ def parse_args() -> argparse.Namespace:
 											help='Optional output path for JSON summary.')
 	parser.add_argument('--progress-every', type=int, default=50,
 											help='Print progress every N batches.')
+	parser.add_argument('--heatmap-out', type=str, default='heatmap.png',
+											help='Output path for heatmap image.')
 	parser.add_argument(
 		'--rescale-predictions',
 		action='store_true',
@@ -164,6 +167,15 @@ def per_bin_accuracy(confusion: np.ndarray) -> np.ndarray:
 	return acc
 
 
+def per_bin_f1(confusion: np.ndarray) -> np.ndarray:
+	tp = np.diag(confusion).astype(np.float64)
+	fp = confusion.sum(axis=0).astype(np.float64) - tp
+	fn = confusion.sum(axis=1).astype(np.float64) - tp
+	with np.errstate(divide='ignore', invalid='ignore'):
+		f1 = np.divide(2 * tp, 2 * tp + fp + fn, out=np.full_like(tp, np.nan), where=(2 * tp + fp + fn) > 0)
+	return f1
+
+
 def format_confusion(confusion: np.ndarray) -> str:
 	row_headers = BIN_LABELS
 	col_headers = BIN_LABELS
@@ -203,23 +215,28 @@ def format_confusion(confusion: np.ndarray) -> str:
 	return '\n'.join(lines)
 
 
-def format_per_bin(acc_by_bin: np.ndarray, counts: np.ndarray) -> str:
+def format_per_bin(acc_by_bin: np.ndarray, f1_by_bin: np.ndarray, counts: np.ndarray) -> str:
 	count_strings = [str(int(v)) for v in counts]
 	acc_strings = [
 		'nan' if np.isnan(acc_by_bin[idx]) else f'{acc_by_bin[idx]:.4f}'
+		for idx in range(BIN_COUNT)
+	]
+	f1_strings = [
+		'nan' if np.isnan(f1_by_bin[idx]) else f'{f1_by_bin[idx]:.4f}'
 		for idx in range(BIN_COUNT)
 	]
 
 	bin_width = max(len('bin'), max(len(label) for label in BIN_LABELS))
 	count_width = max(len('count'), max(len(v) for v in count_strings))
 	acc_width = max(len('accuracy'), max(len(v) for v in acc_strings))
+	f1_width = max(len('f1_score'), max(len(v) for v in f1_strings))
 
 	lines = [
-		f"{'bin'.ljust(bin_width)}  {'count'.rjust(count_width)}  {'accuracy'.rjust(acc_width)}"
+		f"{'bin'.ljust(bin_width)}  {'count'.rjust(count_width)}  {'accuracy'.rjust(acc_width)}  {'f1_score'.rjust(f1_width)}"
 	]
 	for idx, label in enumerate(BIN_LABELS):
 		lines.append(
-			f"{label.ljust(bin_width)}  {count_strings[idx].rjust(count_width)}  {acc_strings[idx].rjust(acc_width)}"
+			f"{label.ljust(bin_width)}  {count_strings[idx].rjust(count_width)}  {acc_strings[idx].rjust(acc_width)}  {f1_strings[idx].rjust(f1_width)}"
 		)
 	return '\n'.join(lines)
 
@@ -319,13 +336,15 @@ def evaluate(
 
 			running_confusion = compute_confusion(running_actual_bins, running_pred_bins)
 			running_bin_acc = per_bin_accuracy(running_confusion)
+			running_bin_f1 = per_bin_f1(running_confusion)
 			running_counts = running_confusion.sum(axis=1)
 			running_overall = float(np.mean(running_actual_bins == running_pred_bins))
+			running_macro_f1 = float(np.nanmean(running_bin_f1))
 
 			print(
 				f'Processed {batch_idx + 1} batches ({len(actual_elos)} player-samples). '
 				f'scale={running_scale:.6f} shift={running_shift:.3f} '
-				f'overall_bin_acc={running_overall:.4f} '
+				f'overall_bin_acc={running_overall:.4f} macro_f1={running_macro_f1:.4f} '
 				f'actual_pair_mean_abs_diff={running_actual_pair_abs_diff_mean:.3f} '
 				f'actual_pair_abs_diff_q25={running_q25:.3f} '
 				f'actual_pair_abs_diff_q50={running_q50:.3f} '
@@ -334,7 +353,7 @@ def evaluate(
 				f'norm_mae={running_mae_norm:.3f} norm_mse={running_mse_norm:.3f}'
 			)
 			print('Running per-bin accuracy (actual bin denominator):')
-			print(format_per_bin(running_bin_acc, running_counts))
+			print(format_per_bin(running_bin_acc, running_bin_f1, running_counts))
 			print('Running confusion matrix (rows=actual, cols=predicted):')
 			print(format_confusion(running_confusion))
 
@@ -367,9 +386,11 @@ def evaluate(
 
 	confusion = compute_confusion(actual_bins, pred_bins)
 	bin_acc = per_bin_accuracy(confusion)
+	bin_f1 = per_bin_f1(confusion)
 	counts = confusion.sum(axis=1)
 
 	overall_accuracy = float(np.mean(actual_bins == pred_bins))
+	macro_f1 = float(np.nanmean(bin_f1))
 
 	return {
 		'sample_count': int(actual_arr.shape[0]),
@@ -388,8 +409,13 @@ def evaluate(
 		'normalized_prediction_mae': norm_mae,
 		'normalized_prediction_mse': norm_mse,
 		'overall_bin_accuracy': overall_accuracy,
+		'macro_f1_score': macro_f1,
 		'per_bin_accuracy': {
 			BIN_LABELS[i]: None if np.isnan(bin_acc[i]) else float(bin_acc[i])
+			for i in range(BIN_COUNT)
+		},
+		'per_bin_f1_score': {
+			BIN_LABELS[i]: None if np.isnan(bin_f1[i]) else float(bin_f1[i])
 			for i in range(BIN_COUNT)
 		},
 		'per_bin_counts': {
@@ -419,16 +445,42 @@ def print_summary(model_kind: str, shard_count: int, result: Dict[str, object]) 
 	print(f"Normalized prediction MAE: {result['normalized_prediction_mae']:.3f}")
 	print(f"Normalized prediction MSE: {result['normalized_prediction_mse']:.3f}")
 	print(f"Overall bin accuracy: {result['overall_bin_accuracy']:.4f}")
+	print(f"Macro F1 score: {result['macro_f1_score']:.4f}")
 
 	confusion = np.asarray(result['confusion_matrix'], dtype=np.int64)
 	acc_by_bin = per_bin_accuracy(confusion)
+	f1_by_bin = per_bin_f1(confusion)
 	counts = confusion.sum(axis=1)
 
-	print('\nPer-bin accuracy (actual bin denominator):')
-	print(format_per_bin(acc_by_bin, counts))
+	print('\nPer-bin metrics:')
+	print(format_per_bin(acc_by_bin, f1_by_bin, counts))
 
 	print('\nConfusion matrix (rows=actual, cols=predicted):')
 	print(format_confusion(confusion))
+
+def plot_heatmap(confusion: List[List[int]], labels: List[str], path: str) -> None:
+	confusion_arr = np.array(confusion)
+	fig, ax = plt.subplots(figsize=(10, 8))
+	cax = ax.imshow(confusion_arr, interpolation='nearest', cmap='Blues')
+	fig.colorbar(cax)
+	ax.set_xticks(np.arange(len(labels)))
+	ax.set_yticks(np.arange(len(labels)))
+	ax.set_xticklabels(labels, rotation=45, ha='right')
+	ax.set_yticklabels(labels)
+	
+	thresh = confusion_arr.max() / 2.
+	for i in range(len(labels)):
+		for j in range(len(labels)):
+			color = "white" if confusion_arr[i, j] > thresh else "black"
+			ax.text(j, i, str(confusion_arr[i, j]), ha='center', va='center', color=color)
+			
+	ax.set_xlabel('Predicted')
+	ax.set_ylabel('Actual')
+	ax.set_title('Confusion Matrix Heatmap')
+	fig.tight_layout()
+	fig.savefig(path)
+	plt.close(fig)
+	print(f'Wrote heatmap to {path}')
 
 
 def save_json(path: str, payload: Dict[str, object]) -> None:
@@ -459,6 +511,9 @@ def main() -> None:
 	)
 
 	print_summary(model_kind, len(shard_paths), result)
+
+	if args.heatmap_out:
+		plot_heatmap(cast(List[List[int]], result['confusion_matrix']), BIN_LABELS, args.heatmap_out)
 
 	if args.json_out:
 		save_json(args.json_out, {
