@@ -508,6 +508,7 @@ def main() -> None:
 	shard_paths = find_shards(args.data_dir)
 	loaded_model = load_model(args.model_path)
 	model_kind, elo_predictor = detect_model_kind(loaded_model)
+	global NUM_GAMES
 	NUM_GAMES = args.num_games
 
 	print(f'Loaded model from: {args.model_path}')
