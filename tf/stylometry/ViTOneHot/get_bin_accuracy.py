@@ -58,6 +58,8 @@ def parse_args() -> argparse.Namespace:
 											help='Print progress every N batches.')
 	parser.add_argument('--heatmap-out', type=str, default='heatmap.png',
 											help='Output path for heatmap image.')
+	parser.add_argument('--num-games', type=int, default=NUM_GAMES,
+                      help=f'Number of games per player to evaluate (default: {NUM_GAMES}).')
 	parser.add_argument(
 		'--rescale-predictions',
 		action='store_true',
@@ -506,6 +508,7 @@ def main() -> None:
 	shard_paths = find_shards(args.data_dir)
 	loaded_model = load_model(args.model_path)
 	model_kind, elo_predictor = detect_model_kind(loaded_model)
+	NUM_GAMES = args.num_games
 
 	print(f'Loaded model from: {args.model_path}')
 	print(f'Detected model type: {model_kind}')
