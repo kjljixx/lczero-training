@@ -340,11 +340,16 @@ def evaluate(
 			running_counts = running_confusion.sum(axis=1)
 			running_overall = float(np.mean(running_actual_bins == running_pred_bins))
 			running_macro_f1 = float(np.nanmean(running_bin_f1))
+			
+			valid_f1_mask = ~np.isnan(running_bin_f1)
+			running_weighted_f1 = 0.0
+			if np.any(valid_f1_mask):
+				running_weighted_f1 = float(np.nansum(running_bin_f1 * running_counts) / np.sum(running_counts[valid_f1_mask]))
 
 			print(
 				f'Processed {batch_idx + 1} batches ({len(actual_elos)} player-samples). '
 				f'scale={running_scale:.6f} shift={running_shift:.3f} '
-				f'overall_bin_acc={running_overall:.4f} macro_f1={running_macro_f1:.4f} '
+				f'overall_bin_acc={running_overall:.4f} macro_f1={running_macro_f1:.4f} weighted_f1={running_weighted_f1:.4f} '
 				f'actual_pair_mean_abs_diff={running_actual_pair_abs_diff_mean:.3f} '
 				f'actual_pair_abs_diff_q25={running_q25:.3f} '
 				f'actual_pair_abs_diff_q50={running_q50:.3f} '
@@ -391,6 +396,11 @@ def evaluate(
 
 	overall_accuracy = float(np.mean(actual_bins == pred_bins))
 	macro_f1 = float(np.nanmean(bin_f1))
+	
+	valid_f1_mask = ~np.isnan(bin_f1)
+	weighted_f1 = 0.0
+	if np.any(valid_f1_mask):
+		weighted_f1 = float(np.nansum(bin_f1 * counts) / np.sum(counts[valid_f1_mask]))
 
 	return {
 		'sample_count': int(actual_arr.shape[0]),
@@ -410,6 +420,7 @@ def evaluate(
 		'normalized_prediction_mse': norm_mse,
 		'overall_bin_accuracy': overall_accuracy,
 		'macro_f1_score': macro_f1,
+		'weighted_f1_score': weighted_f1,
 		'per_bin_accuracy': {
 			BIN_LABELS[i]: None if np.isnan(bin_acc[i]) else float(bin_acc[i])
 			for i in range(BIN_COUNT)
@@ -446,6 +457,7 @@ def print_summary(model_kind: str, shard_count: int, result: Dict[str, object]) 
 	print(f"Normalized prediction MSE: {result['normalized_prediction_mse']:.3f}")
 	print(f"Overall bin accuracy: {result['overall_bin_accuracy']:.4f}")
 	print(f"Macro F1 score: {result['macro_f1_score']:.4f}")
+	print(f"Weighted F1 score: {result['weighted_f1_score']:.4f}")
 
 	confusion = np.asarray(result['confusion_matrix'], dtype=np.int64)
 	acc_by_bin = per_bin_accuracy(confusion)
