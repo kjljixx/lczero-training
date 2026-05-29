@@ -108,7 +108,7 @@ def _predict_player_elos(
 	elo_predictor: EloPredictor,
 	seq: tf.Tensor,
 	mask: Optional[tf.Tensor],
-) -> tf.Tensor:
+) -> Optional[tf.Tensor]:
   try:
     batch_size = tf.shape(seq)[0]
     seq = seq[:, :NUM_GAMES, :, :, :]
@@ -276,6 +276,9 @@ def evaluate(
 
 		pred_e0 = _predict_player_elos(elo_predictor, model_inputs['seq0'], model_inputs['mask0'])
 		pred_e1 = _predict_player_elos(elo_predictor, model_inputs['seq1'], model_inputs['mask1'])
+
+		if pred_e0 is None or pred_e1 is None:
+			continue
 
 		actual_e0 = tf.cast(inputs['stm_player_elo'], tf.float32)
 		actual_e1 = tf.cast(inputs['opp_player_elo'], tf.float32)
