@@ -659,7 +659,7 @@ def train_model(
   print(f"Train shards: {len(train_shards)}, Val shards: {len(val_shards)}")
 
   train_skip_rate = 0.2 if len(seq_shard_paths) == 1 else 0.0
-  val_skip_rate = 0.8 if len(seq_shard_paths) == 1 else 0.99
+  val_skip_rate = 0.99 if len(seq_shard_paths) == 1 else 0.99
   
   train_dataset = create_seq_dataset(train_shards, batch_size, shuffle=True, repeat=True, skip_rate=train_skip_rate)
   val_dataset = create_seq_dataset(val_shards, batch_size, shuffle=False, repeat=False, skip_rate=val_skip_rate)
