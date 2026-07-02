@@ -8,7 +8,7 @@ import hashlib
 from datetime import datetime
 import tensorflow as tf
 import numpy as np
-from typing import Tuple, List
+from typing import Tuple, List, cast
 
 from stylometry.ViTOneHot.game_aggregate_vit import GameAggregateViT
 
@@ -22,6 +22,13 @@ NUM_GAMES_MODEL = 20
 NUM_GAMES = 20
 SEQ_PLANES = 21
 ELO_SCALE = 4000
+BIN_COUNT = 8
+BIN_MIN_ELO = 1000.0
+BIN_WIDTH = 200.0
+BIN_CENTERS = np.asarray(
+  [BIN_MIN_ELO + (BIN_WIDTH * idx) + (BIN_WIDTH / 2.0) for idx in range(BIN_COUNT)],
+  dtype=np.float32,
+)
 
 PIECE_SYMBOLS = {
   1: 'p',
@@ -123,6 +130,23 @@ def _decode_name(name_value) -> str:
   if isinstance(name_value, np.bytes_):
     return bytes(name_value).decode('utf-8', errors='replace')
   return str(name_value)
+
+
+def elo_to_bin_index(elo: float) -> int:
+  max_index = BIN_COUNT - 1
+  idx = int((float(elo) - BIN_MIN_ELO) // BIN_WIDTH)
+  return max(0, min(max_index, idx))
+
+
+def elo_to_bin_one_hot(elo: float) -> np.ndarray:
+  one_hot = np.zeros((BIN_COUNT,), dtype=np.float32)
+  one_hot[elo_to_bin_index(elo)] = 1.0
+  return one_hot
+
+
+def bin_probs_to_expected_elo(bin_probs: tf.Tensor) -> tf.Tensor:
+  centers = tf.constant(BIN_CENTERS, dtype=bin_probs.dtype)
+  return tf.reduce_sum(bin_probs * centers, axis=-1)
 
 def chessboard_struct_to_lc0_planes(structs, short=False):
   num_positions = 1 if short else 8
@@ -359,16 +383,25 @@ class EloPredictor(tf.keras.Model):
   """GameAggregateViT encoder + regression head that predicts player elo."""
 
   def __init__(self, vit: GameAggregateViT, hidden_dim: int,
-               ffn_hidden_dim: int = 256, ffn_layers: int = 2, **kwargs):
+               ffn_hidden_dim: int = 256, ffn_layers: int = 2,
+               classify_elo: bool = False, bin_count: int = BIN_COUNT, **kwargs):
     super(EloPredictor, self).__init__(**kwargs)
     self.vit = vit
     self.hidden_dim = hidden_dim
     self.ffn_hidden_dim = ffn_hidden_dim
     self.ffn_layers = ffn_layers
-    self.regression_head = tf.keras.Sequential(
-      [tf.keras.layers.Dense(ffn_hidden_dim, activation='relu') for _ in range(ffn_layers)]
-      + [tf.keras.layers.Dense(1)]
-    )
+    self.classify_elo = classify_elo
+    self.bin_count = bin_count
+    if self.classify_elo:
+      self.classification_head = tf.keras.Sequential(
+        [tf.keras.layers.Dense(ffn_hidden_dim, activation='relu') for _ in range(ffn_layers)]
+        + [tf.keras.layers.Dense(bin_count, activation='softmax')]
+      )
+    else:
+      self.regression_head = tf.keras.Sequential(
+        [tf.keras.layers.Dense(ffn_hidden_dim, activation='relu') for _ in range(ffn_layers)]
+        + [tf.keras.layers.Dense(1)]
+      )
 
   def get_config(self):
     config = super().get_config()
@@ -376,6 +409,8 @@ class EloPredictor(tf.keras.Model):
     config['hidden_dim'] = self.hidden_dim
     config['ffn_hidden_dim'] = self.ffn_hidden_dim
     config['ffn_layers'] = self.ffn_layers
+    config['classify_elo'] = self.classify_elo
+    config['bin_count'] = self.bin_count
     return config
 
   @classmethod
@@ -394,18 +429,24 @@ class EloPredictor(tf.keras.Model):
 
     is_training = _training_flag(training)
     embedding = self.vit(seq, training=is_training, mask=m)  # (batch, hidden_dim)
+    if self.classify_elo:
+      return self.classification_head(embedding, training=is_training)
     elo = self.regression_head(embedding, training=is_training) * ELO_SCALE  # (batch, 1)
     return tf.squeeze(elo, axis=-1)  # (batch,)
 
 @tf.keras.utils.register_keras_serializable()
 class GameOutcomePredictor(tf.keras.Model):
-  def __init__(self, elo_predictor: EloPredictor, **kwargs):
+  def __init__(self, elo_predictor: EloPredictor, classify_elo: bool = False, bin_count: int = BIN_COUNT, **kwargs):
     super(GameOutcomePredictor, self).__init__(**kwargs)
     self.elo_predictor = elo_predictor
+    self.classify_elo = classify_elo
+    self.bin_count = bin_count
   
   def get_config(self):
     config = super().get_config()
     config['elo_predictor'] = tf.keras.utils.serialize_keras_object(self.elo_predictor)
+    config['classify_elo'] = self.classify_elo
+    config['bin_count'] = self.bin_count
     return config
 
   @classmethod
@@ -436,14 +477,29 @@ class GameOutcomePredictor(tf.keras.Model):
 
     game_elo0 = self.elo_predictor({'seq': flat_seq0, 'mask': flat_mask0}, training=is_training)
     game_elo1 = self.elo_predictor({'seq': flat_seq1, 'mask': flat_mask1}, training=is_training)
+    game_probs0 = None
+    game_probs1 = None
+    game_valid0 = None
+    game_valid1 = None
+    e0_class = None
+    e1_class = None
 
-    game_elo0 = tf.reshape(game_elo0, [batch_size, NUM_GAMES_MODEL])
-    game_elo1 = tf.reshape(game_elo1, [batch_size, NUM_GAMES_MODEL])
+    if self.classify_elo:
+      game_probs0 = tf.reshape(game_elo0, [batch_size, NUM_GAMES_MODEL, self.bin_count])
+      game_probs1 = tf.reshape(game_elo1, [batch_size, NUM_GAMES_MODEL, self.bin_count])
+      game_elo0 = bin_probs_to_expected_elo(game_probs0)
+      game_elo1 = bin_probs_to_expected_elo(game_probs1)
+    else:
+      game_elo0 = tf.reshape(game_elo0, [batch_size, NUM_GAMES_MODEL])
+      game_elo1 = tf.reshape(game_elo1, [batch_size, NUM_GAMES_MODEL])
 
     if mask0 is not None:
       game_valid0 = tf.cast(tf.reduce_any(mask0 > 0.0, axis=-1), dtype=game_elo0.dtype)
       elo0 = tf.math.divide_no_nan(
-        tf.reduce_sum(game_elo0 * game_valid0, axis=-1),
+        tf.reduce_sum(
+          tf.math.multiply(tf.cast(game_elo0, game_valid0.dtype), game_valid0),
+          axis=-1,
+        ),
         tf.reduce_sum(game_valid0, axis=-1),
       )
     else:
@@ -452,11 +508,43 @@ class GameOutcomePredictor(tf.keras.Model):
     if mask1 is not None:
       game_valid1 = tf.cast(tf.reduce_any(mask1 > 0.0, axis=-1), dtype=game_elo1.dtype)
       elo1 = tf.math.divide_no_nan(
-        tf.reduce_sum(game_elo1 * game_valid1, axis=-1),
+        tf.reduce_sum(
+          tf.math.multiply(tf.cast(game_elo1, game_valid1.dtype), game_valid1),
+          axis=-1,
+        ),
         tf.reduce_sum(game_valid1, axis=-1),
       )
     else:
       elo1 = tf.reduce_mean(game_elo1, axis=-1)
+
+    if self.classify_elo:
+      assert game_probs0 is not None
+      assert game_probs1 is not None
+      if mask0 is not None:
+        assert game_valid0 is not None
+        class_valid0 = tf.expand_dims(game_valid0, axis=-1)
+        e0_class = tf.math.divide_no_nan(
+          tf.reduce_sum(
+            tf.math.multiply(tf.cast(game_probs0, class_valid0.dtype), class_valid0),
+            axis=1,
+          ),
+          tf.reduce_sum(class_valid0, axis=1),
+        )
+      else:
+        e0_class = tf.reduce_mean(game_probs0, axis=1)
+
+      if mask1 is not None:
+        assert game_valid1 is not None
+        class_valid1 = tf.expand_dims(game_valid1, axis=-1)
+        e1_class = tf.math.divide_no_nan(
+          tf.reduce_sum(
+            tf.math.multiply(tf.cast(game_probs1, class_valid1.dtype), class_valid1),
+            axis=1,
+          ),
+          tf.reduce_sum(class_valid1, axis=1),
+        )
+      else:
+        e1_class = tf.reduce_mean(game_probs1, axis=1)
 
     elo_diff = (elo0 - elo1)
     draw_margin = 21.57  # represent approx 0.062 win prob as found empirically
@@ -464,12 +552,18 @@ class GameOutcomePredictor(tf.keras.Model):
     p_win = 1 / (1 + tf.pow(10.0, 0.9 * (-elo_diff + draw_margin) / (400)))
     p_loss = 1 / (1 + tf.pow(10.0, 0.9 * (elo_diff + draw_margin) / (400)))
     p_draw = 1 - p_win - p_loss
-    return {
+    outputs = {
       'w': tf.stack([p_win, p_draw, p_loss], axis=-1),  # (batch, 3)
       'e0': elo0,  # (batch,)
       'e1': elo1,  # (batch,)
       'e_d': elo_diff,  # (batch,)
     }
+    if self.classify_elo:
+      assert e0_class is not None
+      assert e1_class is not None
+      outputs['e0_class'] = e0_class
+      outputs['e1_class'] = e1_class
+    return outputs
 
   def train_step(self, data):
     results = super().train_step(data)
@@ -635,6 +729,7 @@ def train_model(
   data_dir: str,
   output_dir: str,
   start_checkpoint: str,
+  elo_task: str,
   epochs: int,
   batch_size: int,
   learning_rate: float,
@@ -651,6 +746,8 @@ def train_model(
 ):
   os.makedirs(output_dir, exist_ok=True)
 
+  classify_elo = elo_task == 'classifier'
+
   print(f"Loading data from {data_dir}...")
 
   seq_shard_paths = get_shard_paths(data_dir, "seq_shards")
@@ -663,6 +760,30 @@ def train_model(
   
   train_dataset = create_seq_dataset(train_shards, batch_size, shuffle=True, repeat=True, skip_rate=train_skip_rate)
   val_dataset = create_seq_dataset(val_shards, batch_size, shuffle=False, repeat=False, skip_rate=val_skip_rate)
+
+  if classify_elo:
+    def _add_elo_bins(inputs, labels):
+      labels = dict(labels)
+      labels['e0_class'] = tf.one_hot(
+        tf.clip_by_value(
+          tf.cast(tf.floor((labels['e0'] - BIN_MIN_ELO) / BIN_WIDTH), tf.int32),
+          0,
+          BIN_COUNT - 1,
+        ),
+        BIN_COUNT,
+      )
+      labels['e1_class'] = tf.one_hot(
+        tf.clip_by_value(
+          tf.cast(tf.floor((labels['e1'] - BIN_MIN_ELO) / BIN_WIDTH), tf.int32),
+          0,
+          BIN_COUNT - 1,
+        ),
+        BIN_COUNT,
+      )
+      return inputs, labels
+
+    train_dataset = train_dataset.map(_add_elo_bins, num_parallel_calls=tf.data.AUTOTUNE)
+    val_dataset = val_dataset.map(_add_elo_bins, num_parallel_calls=tf.data.AUTOTUNE)
 
   print("Creating model...")
 
@@ -685,23 +806,40 @@ def train_model(
         vit=stylo_model,
         hidden_dim=hidden_dim,
         ffn_hidden_dim=ffn_hidden_dim,
-        ffn_layers=ffn_layers
-      )
+        ffn_layers=ffn_layers,
+        classify_elo=classify_elo,
+        bin_count=BIN_COUNT,
+      ),
+      classify_elo=classify_elo,
+      bin_count=BIN_COUNT,
     )
   assert isinstance(model, GameOutcomePredictor)
 
-  model.compile(
-    optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
-    loss={
-      'w': tf.keras.losses.CategoricalCrossentropy(),
-    },
-    metrics={
-      'w': [tf.keras.metrics.CategoricalAccuracy(name='a'), tf.keras.metrics.MeanSquaredError(name='m'), tf.keras.metrics.MeanAbsoluteError(name='e')],
-      # 'e0': [tf.keras.metrics.MeanAbsoluteError(name='e'), tf.keras.metrics.MeanSquaredError(name='m')],
-      # 'e1': [tf.keras.metrics.MeanAbsoluteError(name='e'), tf.keras.metrics.MeanSquaredError(name='m')],
-      'e_d': [StrengthDiffError(), StrengthDiffAbsError()],
-    }
-  )
+  if classify_elo:
+    model.compile(
+      optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
+      loss={
+        'e0_class': tf.keras.losses.CategoricalCrossentropy(),
+        'e1_class': tf.keras.losses.CategoricalCrossentropy(),
+      },
+      metrics={
+        'e0_class': [tf.keras.metrics.CategoricalAccuracy(name='a')],
+        'e1_class': [tf.keras.metrics.CategoricalAccuracy(name='a')],
+      }
+    )
+  else:
+    model.compile(
+      optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
+      loss={
+        'w': tf.keras.losses.CategoricalCrossentropy(),
+      },
+      metrics={
+        'w': [tf.keras.metrics.CategoricalAccuracy(name='a'), tf.keras.metrics.MeanSquaredError(name='m'), tf.keras.metrics.MeanAbsoluteError(name='e')],
+        # 'e0': [tf.keras.metrics.MeanAbsoluteError(name='e'), tf.keras.metrics.MeanSquaredError(name='m')],
+        # 'e1': [tf.keras.metrics.MeanAbsoluteError(name='e'), tf.keras.metrics.MeanSquaredError(name='m')],
+        'e_d': [StrengthDiffError(), StrengthDiffAbsError()],
+      }
+    )
 
   model.build(input_shape={  # type: ignore
     'seq0': (None, NUM_GAMES, MAX_MOVES, SEQ_PLANES, 8, 8),
@@ -802,6 +940,8 @@ def train_model(
   train_e0_m = _last_metric('e0_m', 'e0_mse', 'elo0_mse')
   train_e1_e = _last_metric('e1_e', 'e1_mae', 'elo1_mae')
   train_e1_m = _last_metric('e1_m', 'e1_mse', 'elo1_mse')
+  train_e0_class_a = _last_metric('e0_class_a')
+  train_e1_class_a = _last_metric('e1_class_a')
   train_ed_e = _last_metric('e_d_e')
   train_ed_a = _last_metric('e_d_a')
   if train_loss is not None:
@@ -820,6 +960,10 @@ def train_model(
     print(f"  E1 E:       {train_e1_e:.2f}")
   if train_e1_m is not None:
     print(f"  E1 M:       {train_e1_m:.2f}")
+  if train_e0_class_a is not None:
+    print(f"  E0 Class A: {train_e0_class_a:.4f}")
+  if train_e1_class_a is not None:
+    print(f"  E1 Class A: {train_e1_class_a:.4f}")
   if train_ed_e is not None:
     print(f"  ED E:       {train_ed_e:.2f}")
   if train_ed_a is not None:
@@ -868,6 +1012,12 @@ if __name__ == "__main__":
   parser.add_argument("--batch-size", type=int, default=32)
   parser.add_argument("--learning-rate", type=float, default=1e-4)
   parser.add_argument("--val-split", type=float, default=0.003)
+  parser.add_argument(
+    "--elo-task",
+    choices=['regression', 'classifier'],
+    default='regression',
+    help='Predict scalar Elo values or 8-bin class labels.',
+  )
   parser.add_argument("--hidden-dim", type=int, default=256)
   parser.add_argument("--num-layers", type=int, default=6)
   parser.add_argument("--num-heads", type=int, default=4)
@@ -896,6 +1046,7 @@ if __name__ == "__main__":
     data_dir=args.data_dir,
     output_dir=args.output_dir,
     start_checkpoint=args.start_checkpoint,
+    elo_task=args.elo_task,
     epochs=args.epochs,
     batch_size=args.batch_size,
     learning_rate=args.learning_rate,

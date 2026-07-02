@@ -41,6 +41,9 @@ BIN_LABELS = [
 	'2400-2599',
 ]
 BIN_COUNT = len(BIN_LABELS)
+BIN_MIN_ELO = 1000.0
+BIN_WIDTH = 200.0
+BIN_CENTERS = np.asarray([BIN_MIN_ELO + (BIN_WIDTH * idx) + (BIN_WIDTH / 2.0) for idx in range(BIN_COUNT)], dtype=np.float32)
 
 
 def parse_args() -> argparse.Namespace:
@@ -97,13 +100,17 @@ def load_model(model_path: str) -> tf.keras.Model:
 	return cast(tf.keras.Model, loaded)
 
 
-def detect_model_kind(model: tf.keras.Model) -> Tuple[str, EloPredictor]:
+def detect_model_kind(model: tf.keras.Model) -> Tuple[str, EloPredictor, bool]:
 	if hasattr(model, 'elo_predictor') and callable(getattr(model, 'elo_predictor')):
 		elo_predictor = getattr(model, 'elo_predictor')
 		if hasattr(elo_predictor, 'vit') and hasattr(elo_predictor, 'regression_head'):
-			return 'game_outcome_predictor', cast(EloPredictor, elo_predictor)
+			return 'game_outcome_predictor', cast(EloPredictor, elo_predictor), bool(getattr(elo_predictor, 'classify_elo', False))
+		if hasattr(elo_predictor, 'vit') and hasattr(elo_predictor, 'classification_head'):
+			return 'game_outcome_predictor', cast(EloPredictor, elo_predictor), True
 	if hasattr(model, 'vit') and hasattr(model, 'regression_head'):
-		return 'elo_predictor', cast(EloPredictor, model)
+		return 'elo_predictor', cast(EloPredictor, model), bool(getattr(model, 'classify_elo', False))
+	if hasattr(model, 'vit') and hasattr(model, 'classification_head'):
+		return 'elo_predictor', cast(EloPredictor, model), True
 	raise ValueError(
 		'Unsupported model type. Expected GameOutcomePredictor or EloPredictor-compatible model.'
 	)
@@ -113,33 +120,67 @@ def _predict_player_elos(
 	elo_predictor: EloPredictor,
 	seq: tf.Tensor,
 	mask: Optional[tf.Tensor],
-) -> Optional[tf.Tensor]:
-  try:
-    batch_size = tf.shape(seq)[0]
-    seq = seq[:, :NUM_GAMES, :, :, :]
-    mask = mask[:, :NUM_GAMES, :]
-    flat_seq = tf.reshape(
-      seq,
-      [-1, MAX_MOVES, SEQ_PLANES, 8, 8],
-    )
-    flat_mask = None
-    if mask is not None:
-      flat_mask = tf.reshape(mask, [-1, MAX_MOVES])
+ 	classify_elo: bool,
+) -> Optional[Tuple[tf.Tensor, tf.Tensor]]:
+	try:
+		batch_size = tf.shape(seq)[0]
+		game_count = tf.minimum(tf.shape(seq)[1], NUM_GAMES)
+		seq = tf.gather(seq, tf.range(game_count), axis=1)
+		flat_seq = tf.reshape(
+			seq,
+			[-1, MAX_MOVES, SEQ_PLANES, 8, 8],
+		)
+		flat_mask = None
+		trimmed_mask = None
+		if mask is not None:
+			trimmed_mask = tf.gather(mask, tf.range(game_count), axis=1)
+			flat_mask = tf.reshape(trimmed_mask, [-1, MAX_MOVES])
 
-    game_elo = elo_predictor({'seq': flat_seq, 'mask': flat_mask}, training=False)
-    game_elo = tf.reshape(game_elo, [batch_size, NUM_GAMES])
+		game_output = elo_predictor({'seq': flat_seq, 'mask': flat_mask}, training=False)
+		if classify_elo:
+			game_probs = tf.reshape(game_output, [batch_size, game_count, BIN_COUNT])
+			bin_centers = tf.constant(BIN_CENTERS, dtype=game_probs.dtype)
+			game_expected = tf.reduce_sum(game_probs * bin_centers, axis=-1)
+			if trimmed_mask is None:
+				expected_elo = tf.reduce_mean(game_expected, axis=-1)
+				averaged_probs = tf.reduce_mean(game_probs, axis=1)
+			else:
+				mask_positive = tf.math.greater(trimmed_mask, tf.zeros_like(trimmed_mask))
+				game_valid = tf.cast(tf.reduce_any(mask_positive, axis=-1), dtype=game_expected.dtype)
+				valid_games = tf.reduce_sum(game_valid, axis=-1)
+				expected_elo = tf.math.divide_no_nan(
+					tf.reduce_sum(game_expected * game_valid, axis=-1),
+					valid_games,
+				)
+				valid_games_expanded = tf.expand_dims(game_valid, axis=-1)
+				averaged_probs = tf.math.divide_no_nan(
+					tf.reduce_sum(game_probs * valid_games_expanded, axis=1),
+					tf.expand_dims(valid_games, axis=-1),
+				)
+			predicted_bins = tf.cast(tf.argmax(averaged_probs, axis=-1), tf.int32)
+			return cast(tf.Tensor, expected_elo), cast(tf.Tensor, predicted_bins)
 
-    if mask is None:
-      return tf.reduce_mean(game_elo, axis=-1)
-
-    mask_positive = tf.math.greater(mask, tf.zeros_like(mask))
-    game_valid = tf.cast(tf.reduce_any(mask_positive, axis=-1), dtype=game_elo.dtype)
-    return tf.math.divide_no_nan(
-      tf.reduce_sum(game_elo * game_valid, axis=-1),
-      tf.reduce_sum(game_valid, axis=-1),
-    )
-  except Exception as e:
-    print(f"Error during prediction: {e}")
+		game_elo = tf.reshape(game_output, [batch_size, game_count])
+		if trimmed_mask is None:
+			expected_elo = tf.reduce_mean(game_elo, axis=-1)
+		else:
+			mask_positive = tf.math.greater(trimmed_mask, tf.zeros_like(trimmed_mask))
+			game_valid = tf.cast(tf.reduce_any(mask_positive, axis=-1), dtype=game_elo.dtype)
+			expected_elo = tf.math.divide_no_nan(
+				tf.reduce_sum(game_elo * game_valid, axis=-1),
+				tf.reduce_sum(game_valid, axis=-1),
+			)
+		predicted_bins = tf.cast(
+			tf.clip_by_value(
+				tf.cast(tf.floor((expected_elo - BIN_MIN_ELO) / BIN_WIDTH), tf.int32),
+				0,
+				BIN_COUNT - 1,
+			),
+			tf.int32,
+		)
+		return cast(tf.Tensor, expected_elo), cast(tf.Tensor, predicted_bins)
+	except Exception as e:
+		print(f"Error during prediction: {e}")
 
 
 def elo_to_bin_index(elo: float) -> int:
@@ -264,6 +305,7 @@ def normalize_predictions(
 
 def evaluate(
 	elo_predictor: EloPredictor,
+	classify_elo: bool,
 	shard_paths: Sequence[str],
 	batch_size: int,
 	max_batches: int,
@@ -279,6 +321,7 @@ def evaluate(
 	)
 
 	predicted_elos: List[float] = []
+	predicted_bins: List[int] = []
 	actual_elos: List[float] = []
 	actual_pair_abs_diffs: List[float] = []
 
@@ -293,23 +336,30 @@ def evaluate(
 			'mask1': inputs['mask1'],
 		}
 
-		pred_e0 = _predict_player_elos(elo_predictor, model_inputs['seq0'], model_inputs['mask0'])
-		pred_e1 = _predict_player_elos(elo_predictor, model_inputs['seq1'], model_inputs['mask1'])
+		pred_e0 = _predict_player_elos(elo_predictor, model_inputs['seq0'], model_inputs['mask0'], classify_elo)
+		pred_e1 = _predict_player_elos(elo_predictor, model_inputs['seq1'], model_inputs['mask1'], classify_elo)
 
 		if pred_e0 is None or pred_e1 is None:
 			continue
 
+		pred_e0_elo, pred_e0_bin = pred_e0
+		pred_e1_elo, pred_e1_bin = pred_e1
+
 		actual_e0 = tf.cast(inputs['stm_player_elo'], tf.float32)
 		actual_e1 = tf.cast(inputs['opp_player_elo'], tf.float32)
 
-		pred_e0_np = np.asarray(pred_e0, dtype=np.float64).reshape(-1)
-		pred_e1_np = np.asarray(pred_e1, dtype=np.float64).reshape(-1)
+		pred_e0_np = np.asarray(pred_e0_elo, dtype=np.float64).reshape(-1)
+		pred_e1_np = np.asarray(pred_e1_elo, dtype=np.float64).reshape(-1)
+		pred_e0_bin_np = np.asarray(pred_e0_bin, dtype=np.int32).reshape(-1)
+		pred_e1_bin_np = np.asarray(pred_e1_bin, dtype=np.int32).reshape(-1)
 		actual_e0_np = np.asarray(actual_e0, dtype=np.float64).reshape(-1)
 		actual_e1_np = np.asarray(actual_e1, dtype=np.float64).reshape(-1)
 		actual_pair_abs_diff_np = np.abs(actual_e0_np - actual_e1_np)
 
 		predicted_elos.extend(pred_e0_np.tolist())
 		predicted_elos.extend(pred_e1_np.tolist())
+		predicted_bins.extend(pred_e0_bin_np.tolist())
+		predicted_bins.extend(pred_e1_bin_np.tolist())
 		actual_elos.extend(actual_e0_np.tolist())
 		actual_elos.extend(actual_e1_np.tolist())
 		actual_pair_abs_diffs.extend(actual_pair_abs_diff_np.tolist())
@@ -334,7 +384,10 @@ def evaluate(
 			running_mse_norm = float(np.mean(np.square(running_error_norm)))
 
 			running_actual_bins = bin_all(running_actual)
-			running_pred_bins = bin_all(running_pred_norm)
+			if classify_elo:
+				running_pred_bins = np.asarray(predicted_bins, dtype=np.int32)
+			else:
+				running_pred_bins = bin_all(running_pred_norm)
 
 			running_confusion = compute_confusion(running_actual_bins, running_pred_bins)
 			running_bin_acc = per_bin_accuracy(running_confusion)
@@ -389,7 +442,10 @@ def evaluate(
 	norm_mse = float(np.mean(np.square(norm_error)))
 
 	actual_bins = bin_all(actual_arr)
-	pred_bins = bin_all(norm_pred_arr)
+	if classify_elo:
+		pred_bins = np.asarray(predicted_bins, dtype=np.int32)
+	else:
+		pred_bins = bin_all(norm_pred_arr)
 
 	confusion = compute_confusion(actual_bins, pred_bins)
 	bin_acc = per_bin_accuracy(confusion)
@@ -507,18 +563,20 @@ def main() -> None:
 	args = parse_args()
 	shard_paths = find_shards(args.data_dir)
 	loaded_model = load_model(args.model_path)
-	model_kind, elo_predictor = detect_model_kind(loaded_model)
+	model_kind, elo_predictor, classify_elo = detect_model_kind(loaded_model)
 	global NUM_GAMES
 	NUM_GAMES = args.num_games
 
 	print(f'Loaded model from: {args.model_path}')
 	print(f'Detected model type: {model_kind}')
+	print(f'Classifier mode: {classify_elo}')
 	print(f"Using {NUM_GAMES} games per player.")
 	if model_kind == 'game_outcome_predictor':
 		print('Using extracted inner Elo predictor for evaluation.')
 
 	result = evaluate(
 		elo_predictor=elo_predictor,
+		classify_elo=classify_elo,
 		shard_paths=shard_paths,
 		batch_size=args.batch_size,
 		max_batches=args.max_batches,
@@ -536,6 +594,7 @@ def main() -> None:
 			'model_path': args.model_path,
 			'data_dir': args.data_dir,
 			'model_kind': model_kind,
+			'classify_elo': bool(classify_elo),
 			'rescale_predictions': bool(args.rescale_predictions),
 			**result,
 		})
