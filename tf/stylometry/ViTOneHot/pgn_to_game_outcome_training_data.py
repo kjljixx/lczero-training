@@ -488,7 +488,8 @@ def process_pgns(
     logger.info(f"In Memory: {len(curr_sequences)} sequences, {len(curr_results)} positions")
 
 def save_shard(shard_path, items, serialize_function):
-  with tf.io.TFRecordWriter(shard_path) as writer:
+  options = tf.io.TFRecordOptions(compression_type='ZSTD')
+  with tf.io.TFRecordWriter(shard_path, options=options) as writer:
     for item in items:
       example = serialize_function(item)
       writer.write(example)

@@ -1,0 +1,94 @@
+stylometry/ViTOneHot/models/run2026-06-25/checkpoint_epoch_13.keras
+stylometry/ViTOneHot/data/run2026-06-25-equal-bins
+
+1 context game:
+Processed 4750 batches (75840 player-samples). scale=1.000000 shift=-3676.039 overall_bin_acc=0.2777 macro_f1=0.1591 weighted_f1=0.2607 actual_pair_mean_abs_diff=199.540 actual_pair_abs_diff_q25=107.000 actual_pair_abs_diff_q50=174.000 actual_pair_abs_diff_q75=263.000 raw_mae=3676.039 raw_mse=13590034.484 norm_mae=220.603 norm_mse=76774.608
+Running per-bin accuracy (actual bin denominator):
+bin        count  accuracy  f1_score
+1000-1199   2311    0.0004    0.0009
+1200-1399   5932    0.0885    0.1211
+1400-1599  13183    0.2758    0.2601
+1600-1799  20737    0.3910    0.3339
+1800-1999  20271    0.3500    0.3287
+2000-2199  10168    0.1607    0.1894
+2200-2399   2727    0.0231    0.0390
+2400-2599    511    0.0000    0.0000
+Running confusion matrix (rows=actual, cols=predicted):
+actual\pred  1000-1199  1200-1399  1400-1599  1600-1799  1800-1999  2000-2199  2200-2399  2400-2599
+1000-1199            1        369        897        763        255         26          0          0
+1200-1399            7        525       1940       2280       1039        137          4          0
+1400-1599            4        732       3636       5222       2984        575         30          0
+1600-1799            3        626       4178       8108       6174       1574         74          0
+1800-1999            1        345       2948       7290       7095       2407        185          0
+2000-2199            0        123        947       3282       4043       1634        137          2
+2200-2399            0         12        194        774       1082        601         63          1
+2400-2599            0          3         36        104        224        130         14          0
+
+5 context game:
+Processed 1750 batches (27920 player-samples). scale=1.000000 shift=-3660.537 overall_bin_acc=0.3479 macro_f1=0.1378 weighted_f1=0.2788 actual_pair_mean_abs_diff=208.091 actual_pair_abs_diff_q25=116.000 actual_pair_abs_diff_q50=182.000 actual_pair_abs_diff_q75=274.000 raw_mae=3660.537 raw_mse=13448961.449 norm_mae=175.426 norm_mse=49431.655
+Running per-bin accuracy (actual bin denominator):
+bin        count  accuracy  f1_score
+1000-1199    708    0.0000    0.0000
+1200-1399   1896    0.0011    0.0021
+1400-1599   4456    0.1248    0.1790
+1600-1799   7676    0.6643    0.4460
+1800-1999   7904    0.4999    0.4259
+2000-2199   3905    0.0266    0.0493
+2200-2399   1196    0.0000    0.0000
+2400-2599    179    0.0000    0.0000
+Running confusion matrix (rows=actual, cols=predicted):
+actual\pred  1000-1199  1200-1399  1400-1599  1600-1799  1800-1999  2000-2199  2200-2399  2400-2599
+1000-1199            0         10        329        357         12          0          0          0
+1200-1399            0          2        543       1238        113          0          0          0
+1400-1599            0          2        556       3292        604          2          0          0
+1600-1799            0          0        260       5099       2304         13          0          0
+1800-1999            0          0         63       3812       3951         78          0          0
+2000-2199            0          0          6       1142       2653        104          0          0
+2200-2399            0          0          1        216        876        103          0          0
+2400-2599            0          0          0         32        137         10          0          0
+
+10 context game:
+Processed 3800 batches (60688 player-samples). scale=1.000000 shift=-3673.170 overall_bin_acc=0.3479 macro_f1=0.1275 weighted_f1=0.2626 actual_pair_mean_abs_diff=201.240 actual_pair_abs_diff_q25=108.000 actual_pair_abs_diff_q50=175.000 actual_pair_abs_diff_q75=265.000 raw_mae=3673.170 raw_mse=13540566.002 norm_mae=173.964 norm_mse=48390.093
+Running per-bin accuracy (actual bin denominator):
+bin        count  accuracy  f1_score
+1000-1199   1785    0.0000    0.0000
+1200-1399   4641    0.0002    0.0004
+1400-1599  10385    0.0863    0.1306
+1600-1799  16557    0.7852    0.4751
+1800-1999  16387    0.4381    0.4053
+2000-2199   8265    0.0044    0.0086
+2200-2399   2265    0.0000    0.0000
+2400-2599    403    0.0000    0.0000
+Running confusion matrix (rows=actual, cols=predicted):
+actual\pred  1000-1199  1200-1399  1400-1599  1600-1799  1800-1999  2000-2199  2200-2399  2400-2599
+1000-1199            0         10        981        792          2          0          0          0
+1200-1399            0          1       1168       3402         70          0          0          0
+1400-1599            0          1        896       8902        586          0          0          0
+1600-1799            0          0        237      13001       3319          0          0          0
+1800-1999            0          0         50       9155       7179          3          0          0
+2000-2199            0          0          2       2538       5689         36          0          0
+2200-2399            0          0          0        341       1856         68          0          0
+2400-2599            0          0          0         46        341         16          0          0
+
+20 context game:
+Processed 2300 batches (36672 player-samples). scale=1.000000 shift=-3663.621 overall_bin_acc=0.3654 macro_f1=0.1240 weighted_f1=0.2679 actual_pair_mean_abs_diff=206.517 actual_pair_abs_diff_q25=113.000 actual_pair_abs_diff_q50=180.000 actual_pair_abs_diff_q75=272.000 raw_mae=3663.621 raw_mse=13467339.200 norm_mae=167.745 norm_mse=45222.351
+Running per-bin accuracy (actual bin denominator):
+bin        count  accuracy  f1_score
+1000-1199    936    0.0000    0.0000
+1200-1399   2644    0.0000    0.0000
+1400-1599   5901    0.0358    0.0598
+1600-1799  10059    0.8196    0.5027
+1800-1999  10283    0.4810    0.4295
+2000-2199   5119    0.0000    0.0000
+2200-2399   1489    0.0000    0.0000
+2400-2599    241    0.0000    0.0000
+Running confusion matrix (rows=actual, cols=predicted):
+actual\pred  1000-1199  1200-1399  1400-1599  1600-1799  1800-1999  2000-2199  2200-2399  2400-2599
+1000-1199            0          3        440        493          0          0          0          0
+1200-1399            0          0        489       2145         10          0          0          0
+1400-1599            0          0        211       5441        249          0          0          0
+1600-1799            0          0          1       8244       1814          0          0          0
+1800-1999            0          0         12       5325       4946          0          0          0
+2000-2199            0          0          0       1002       4117          0          0          0
+2200-2399            0          0          0         78       1387         24          0          0
+2400-2599            0          0          0         15        226          0          0          0
