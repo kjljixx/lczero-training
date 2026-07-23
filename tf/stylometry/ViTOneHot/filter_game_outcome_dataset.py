@@ -62,8 +62,9 @@ def filter_dataset(input_files, output_dir, min_games=5):
     for file_path in tqdm(input_files, desc="Filtering Shards"):
         output_file = os.path.join(output_dir, os.path.basename(file_path))
         raw_dataset = tf.data.TFRecordDataset(file_path, compression_type='GZIP')
-        
-        with tf.io.TFRecordWriter(output_file) as writer:
+
+        options = tf.io.TFRecordOptions(compression_type='GZIP')
+        with tf.io.TFRecordWriter(output_file, options=options) as writer:
             for raw_record in raw_dataset:
                 features = tf.io.parse_single_example(raw_record, feature_description)
                 stm = features['stm_player_name'].numpy().decode('utf-8')
@@ -105,4 +106,4 @@ def main():
 if __name__ == "__main__":
     main()
 
-# python3 stylometry/ViTOneHot/filter_game_outcome_dataset.py stylometry/ViTOneHot/data/run2026-04-06/ stylometry/ViTOneHot/data/run2026-04-06-filtered/
+# python3 stylometry/ViTOneHot/filter_game_outcome_dataset.py stylometry/ViTOneHot/data/run2026-04-06/ stylometry/ViTOneHot/data/run2026-04-06-filtered/ --min-games 20
