@@ -223,22 +223,26 @@ def parse_seq_example(serialized_example):
     'opp_player_elo': tf.io.FixedLenFeature([], tf.int64),
     'wdl': tf.io.FixedLenFeature([3], tf.float32),
   }
-  example = tf.io.parse_single_example(serialized_example, feature_description)
-  # seq is stored as (NUM_GAMES, MAX_MOVES, 5) uint64 flattened to bytes
-  # decode_raw doesn't support uint64, so decode as int64 and reinterpret later
-  white_seq = tf.io.decode_raw(example['stm_player_seq'], tf.int64)
-  white_seq = tf.reshape(white_seq, [NUM_GAMES, MAX_MOVES, 5])
-  black_seq = tf.io.decode_raw(example['opp_player_seq'], tf.int64)
-  black_seq = tf.reshape(black_seq, [NUM_GAMES, MAX_MOVES, 5])
-  return (
-    white_seq,
-    black_seq,
-    example['stm_player_name'],
-    example['stm_player_elo'],
-    example['opp_player_name'],
-    example['opp_player_elo'],
-    example['wdl'],
-  )
+  
+  # Force all TF preprocessing ops to execute on the CPU
+  with tf.device('/device:CPU:0'):
+    example = tf.io.parse_single_example(serialized_example, feature_description)
+    # seq is stored as (NUM_GAMES, MAX_MOVES, 5) uint64 flattened to bytes
+    # decode_raw doesn't support uint64, so decode as int64 and reinterpret later
+    white_seq = tf.io.decode_raw(example['stm_player_seq'], tf.int64)
+    white_seq = tf.reshape(white_seq, [NUM_GAMES, MAX_MOVES, 5])
+    black_seq = tf.io.decode_raw(example['opp_player_seq'], tf.int64)
+    black_seq = tf.reshape(black_seq, [NUM_GAMES, MAX_MOVES, 5])
+    
+    return (
+      white_seq,
+      black_seq,
+      example['stm_player_name'],
+      example['stm_player_elo'],
+      example['opp_player_name'],
+      example['opp_player_elo'],
+      example['wdl'],
+    )
 
 
 def create_seq_dataset(
