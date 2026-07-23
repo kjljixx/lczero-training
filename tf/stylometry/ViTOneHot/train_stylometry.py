@@ -825,7 +825,8 @@ def train_model(
       metrics={
         'e0_class': [tf.keras.metrics.CategoricalAccuracy(name='a')],
         'e1_class': [tf.keras.metrics.CategoricalAccuracy(name='a')],
-      }
+      },
+      run_eagerly=True
     )
   else:
     model.compile(
@@ -838,7 +839,8 @@ def train_model(
         # 'e0': [tf.keras.metrics.MeanAbsoluteError(name='e'), tf.keras.metrics.MeanSquaredError(name='m')],
         # 'e1': [tf.keras.metrics.MeanAbsoluteError(name='e'), tf.keras.metrics.MeanSquaredError(name='m')],
         'e_d': [StrengthDiffError(), StrengthDiffAbsError()],
-      }
+      },
+      run_eagerly=True
     )
 
   model.build(input_shape={  # type: ignore
