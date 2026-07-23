@@ -12,7 +12,6 @@ from typing import Tuple, List, cast
 
 from stylometry.ViTOneHot.game_aggregate_vit import GameAggregateViT
 
-tf.keras.mixed_precision.set_global_policy('mixed_float16')
 
 def _training_flag(training) -> bool:
   return bool(training) if training is not None else False
