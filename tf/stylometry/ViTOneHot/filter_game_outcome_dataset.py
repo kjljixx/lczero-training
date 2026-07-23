@@ -61,7 +61,7 @@ def filter_dataset(input_files, output_dir, min_games=5):
     logger.info(f"Filtering and saving to {output_dir}...")
     for file_path in tqdm(input_files, desc="Filtering Shards"):
         output_file = os.path.join(output_dir, os.path.basename(file_path))
-        raw_dataset = tf.data.TFRecordDataset(file_path)
+        raw_dataset = tf.data.TFRecordDataset(file_path, compression_type='GZIP')
         
         with tf.io.TFRecordWriter(output_file) as writer:
             for raw_record in raw_dataset:

@@ -252,7 +252,7 @@ def create_seq_dataset(
   def generator():
     for shard_path in shard_paths:
       try:
-        raw_ds = tf.data.TFRecordDataset(shard_path)
+        raw_ds = tf.data.TFRecordDataset(shard_path, compression_type='GZIP')
         for record_idx, raw_record in enumerate(raw_ds):
           if skip_rate > 0.0:
             # Deterministic skip decision keeps validation subset fixed across epochs.
