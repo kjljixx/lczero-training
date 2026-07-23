@@ -1,0 +1,94 @@
+%YAML 1.2
+---
+name: '768x15x24h-t80'                  # ideally no spaces
+gpu: 1                                 # gpu id to process on
+
+dataset:
+  num_chunks: 3000000                   # newest nof chunks to parse
+  allow_less_chunks: true
+  train_ratio: 0.90                    # trainingset ratio
+  # For separated test and train data.
+  input_train: 
+    - '/data/d/ramdisk_fake/dev1/train/' # supports glob
+  input_test: 
+    - '/data/d/ramdisk_fake/dev1/test/' # supports glob
+  input_validation: '/data/d/data/dev1/validate/'
+  # For a one-shot run with all data in one directory.
+  #input: '/work/lc0/data/'
+  train_workers: 32
+  test_workers: 8
+
+training:
+    swa: true
+    swa_output: true
+    swa_steps: 100
+    swa_max_n: 10
+    mask_legal_moves: true
+    lookahead_optimizer: false
+    new_optimizer: true
+    reset_opt: false
+    weight_decay: 0.0
+    renorm: true
+    renorm_max_r: 1.0
+    renorm_max_d: 0.0
+    diff_focus_min: 0.025
+    diff_focus_slope: 3.0
+    q_ratio: 0.0
+    max_grad_norm: 3.0
+    batch_size: 2048                   # training batch
+    num_batch_splits: 4
+    test_steps: 250                    # eval test set values after this many steps
+    validation_steps: 250                    # eval validation set values after this many steps
+    num_test_positions: 40000
+    train_avg_report_steps: 100        # training reports its average values after this many steps.
+    total_steps: 250                  # terminate after these steps
+    warmup_steps: 1000
+    warmup_offset: 8444000
+    checkpoint_steps: 4000          # optional frequency for checkpointing before finish
+    shuffle_size: 500000               # size of the shuffle buffer
+    lr_values:                         # list of learning rates
+        - 0.00005
+        - 0.00005
+    lr_boundaries:                     # list of boundaries
+        - 100
+    policy_loss_weight: 1.0            # weight of policy loss
+    value_loss_weight:  1.0            # weight of value loss
+    moves_left_loss_weight: 1.0            # weight of moves left head loss
+    reg_term_weight: 1.0
+    path: '/data/d/data/dev1/networks'         # network storage dir
+
+model:
+    default_activation: 'mish'          
+    embedding_size: 768
+    policy_embedding_size: 768
+    value_embedding_size: 32
+    moves_left_embedding_size: 8
+    encoder_layers: 15                   # number of intermediate attention layers in the policy head
+    encoder_heads: 24                     # number of attention heads in encoder layers, emb // (32 or 64) recommended
+                                         # with 64 memory is same as embedding, with 32 is double
+    encoder_d_model: 768                 # size of the Q, K, & V vectors in encoder layers -- divisible by encoder_heads
+    encoder_dff: 1024                    # size of the expansion layer in encoder layer ffn
+    glu: false
+    square_relu_ffn: false # ALWAYS SUGGESTED
+    policy_d_model: 768                  # size of the query and key vectors in final attention layer
+    dropout_rate: 0.0                   # the dropout rate used for weight regularization of attention during training
+                                        # makes memory 33 -> 39 GB on A100 as observed by Teck and Kovax
+
+    value: 'wdl'
+    policy: 'attention'
+    moves_left: 'v1'
+    input_type: 'classic'
+
+    # apparently adds nothing with fullgen, but tests needed
+    arc_encoding: true
+    
+    # smolgen: more efficient version of fullgen, adds a lot of params
+    use_smolgen: true
+    smolgen_hidden_channels: 32
+    smolgen_hidden_sz: 256
+    smolgen_gen_sz: 256
+    smolgen_activation: 'swish'
+
+    # bad considering latency bump
+    talking_heads: false
+...
