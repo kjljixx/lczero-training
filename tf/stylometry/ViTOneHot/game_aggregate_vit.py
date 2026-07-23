@@ -52,7 +52,8 @@ class GameAggregateViT(tf.keras.Model):
         input_var = tf.keras.Input(shape=(112, 8, 8))
         assert isinstance(cfg, dict)
         if cfg['model'].get('encoder_layers', 0) > 0:
-            flow, _ = tfp.create_encoder_body(input_var, cfg['model']['filters'])
+            embedding_size = cfg['model'].get('embedding_size', cfg['model'].get('filters'))
+            flow, _ = tfp.create_encoder_body(input_var, embedding_size)
             # print(flow.shape)
             flow = tf.keras.layers.GlobalAveragePooling1D()(flow)
             if flow.shape[-1] != self.hidden_dim:
