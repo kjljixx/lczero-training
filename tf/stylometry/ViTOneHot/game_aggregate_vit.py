@@ -49,13 +49,15 @@ class GameAggregateViT(tf.keras.Model):
         tfp.restore()
         
         # ONLY extract body, not heads
-        input_var = tf.keras.Input(shape=(21, 8, 8))
+        input_var = tf.keras.Input(shape=(112, 8, 8))
         assert isinstance(cfg, dict)
         if cfg['model'].get('encoder_layers', 0) > 0:
-            assert False, "not implemented"
             flow, _ = tfp.create_encoder_body(input_var, cfg['model']['filters'])
-            print(flow.shape)
-            assert flow.shape[2] == self.hidden_dim, f"Expected encoder output dim {self.hidden_dim}, got {flow.shape[2]}"
+            # print(flow.shape)
+            flow = tf.keras.layers.GlobalAveragePooling1D()(flow)
+            if flow.shape[-1] != self.hidden_dim:
+              flow = layers.Dense(units=self.hidden_dim, activation='relu')(flow)
+            # assert flow.shape[2] == self.hidden_dim, f"Expected encoder output dim {self.hidden_dim}, got {flow.shape[2]}"
             self.move_projection = tf.keras.Model(inputs=input_var, outputs=flow)
         else:
             filters = cfg['model']['filters']
