@@ -126,7 +126,7 @@ def main():
     parser.add_argument("input_dir", help="Directory containing TFRecord shards")
     parser.add_argument("output_dir", help="Directory for filtered shards")
     parser.add_argument("--min-games", type=int, default=5, help="Min games per player (default: 5)")
-    parser.add_argument("--workers", type=int, default=max(1, os.cpu_count() // 2), 
+    parser.add_argument("--workers", type=int, default=8, 
                         help="Number of parallel worker threads for shard processing")
     
     args = parser.parse_args()
