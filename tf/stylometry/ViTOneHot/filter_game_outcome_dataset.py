@@ -30,7 +30,7 @@ def get_player_counts(input_files):
 
     logger.info("Counting games per player...")
     for file_path in tqdm(input_files, desc="Shards"):
-        dataset = tf.data.TFRecordDataset(file_path).map(_parse_function)
+        dataset = tf.data.TFRecordDataset(file_path, compression_type='GZIP').map(_parse_function)
         for features in dataset:
             stm = features['stm_player_name'].numpy().decode('utf-8')
             opp = features['opp_player_name'].numpy().decode('utf-8')
