@@ -1,7 +1,7 @@
 %YAML 1.2
 ---
 name: '768x15x24h-t80'                  # ideally no spaces
-gpu: 1                                 # gpu id to process on
+gpu: 0                                 # gpu id to process on
 
 dataset:
   num_chunks: 3000000                   # newest nof chunks to parse
