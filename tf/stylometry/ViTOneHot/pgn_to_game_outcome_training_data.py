@@ -318,59 +318,52 @@ def worker_process_game(game_text: str, max_moves: int, min_moves: int) -> Optio
   game_data = extract_game_data(game, max_moves)
   return (dict(game.headers), game_data)
 
+def to_paired(pos: tuple, sequences_snapshot: dict, shard_unique_game_ids: set) -> tuple:
+  """Quickly packages lists of 2D arrays on the main thread and tracks unique game IDs."""
+  num_in_0 = 0
+  num_in_1 = 0
+  NUM_GAMES = 20
+  white_id = pos[0]
+  black_id = pos[1]
+
+  if white_id in sequences_snapshot:
+    num_in_0 = min(NUM_GAMES, len(sequences_snapshot[white_id]))
+  if black_id in sequences_snapshot:
+    num_in_1 = min(NUM_GAMES, len(sequences_snapshot[black_id]))
+
+  white_samples = random.sample(sequences_snapshot[white_id], num_in_0) if white_id in sequences_snapshot else []
+  black_samples = random.sample(sequences_snapshot[black_id], num_in_1) if black_id in sequences_snapshot else []
+
+  # Safely monitor game uniqueness
+  for x in white_samples:
+    shard_unique_game_ids.add(x[2])
+  for x in black_samples:
+    shard_unique_game_ids.add(x[2])
+
+  white_sampled = [x[0] for x in white_samples]
+  black_sampled = [x[0] for x in black_samples]
+
+  return (
+    white_sampled,
+    black_sampled,
+    pos[2], pos[3], pos[4], pos[5], pos[6]
+  )
+
 def write_shard_background(
-  output_prefix: str,
+  shard_path: str,
   shard_idx: int,
-  results_snapshot: list,
-  sequences_snapshot: dict,
-  global_unique_game_ids: set,
-  global_lock: threading.Lock
+  serialized_items: list,
+  len_shard_unique: int,
+  total_global_unique: int
 ):
-  """Executes inside a background thread to prevent blocking game processing."""
+  """Executes inside a background thread to write pre-serialized raw bytes directly to disk."""
   logger.info(f"Background worker starting write task for shard {shard_idx:04d}...")
+  options = tf.io.TFRecordOptions(compression_type='GZIP')
+  with tf.io.TFRecordWriter(shard_path, options=options) as writer:
+    for raw_bytes in serialized_items:
+      writer.write(raw_bytes)
   
-  shard_unique_game_ids = set()
-
-  def to_paired(pos):
-    num_in_0 = 0
-    num_in_1 = 0
-    NUM_GAMES = 20
-    white_id = pos[0]
-    black_id = pos[1]
-
-    if white_id in sequences_snapshot:
-      num_in_0 = min(NUM_GAMES, len(sequences_snapshot[white_id]))
-    if black_id in sequences_snapshot:
-      num_in_1 = min(NUM_GAMES, len(sequences_snapshot[black_id]))
-
-    # Extract single 2D NumPy array matrices safely
-    white_samples = random.sample(sequences_snapshot[white_id], num_in_0) if white_id in sequences_snapshot else []
-    black_samples = random.sample(sequences_snapshot[black_id], num_in_1) if black_id in sequences_snapshot else []
-
-    # Track unique game sequences using their robust global IDs
-    for x in white_samples:
-      shard_unique_game_ids.add(x[2])
-    for x in black_samples:
-      shard_unique_game_ids.add(x[2])
-
-    white_sampled = [x[0] for x in white_samples]
-    black_sampled = [x[0] for x in black_samples]
-
-    return (
-      white_sampled,
-      black_sampled,
-      pos[2], pos[3], pos[4], pos[5], pos[6]
-    )
-
-  curr_paired_positions = map(to_paired, results_snapshot)
-  save_shard(f"{output_prefix}/seq_shards/{shard_idx:04d}.tfrecord", curr_paired_positions, serialize_position)
-  
-  with global_lock:
-    global_unique_game_ids.update(shard_unique_game_ids)
-    total_global_unique = len(global_unique_game_ids)
-
-  # Log shard-level and cumulative run-level unique games count
-  logger.info(f"Saved {len(shard_unique_game_ids)} unique games in the sequences for shard {shard_idx:04d}.")
+  logger.info(f"Saved {len_shard_unique} unique games in the sequences for shard {shard_idx:04d}.")
   logger.info(f"Total unique games saved across ALL shards so far: {total_global_unique}")
   logger.info(f"Background worker successfully finished writing shard {shard_idx:04d}.")
 
@@ -484,15 +477,31 @@ def process_pgns(
             results_snapshot = list(curr_results)
             sequences_snapshot = {k: list(v) for k, v in curr_sequences.items()}
 
+            # 1. Quick in-memory pairing
+            logger.info(f"Pairing {SHARD_SIZE} positions on main thread...")
+            shard_unique_game_ids = set()
+            paired_positions = [to_paired(pos, sequences_snapshot, shard_unique_game_ids) for pos in results_snapshot]
+
+            # 2. Update global unique game count
+            with global_lock:
+              global_unique_game_ids.update(shard_unique_game_ids)
+              total_global_unique = len(global_unique_game_ids)
+
+            # 3. Parallelize CPU-bound serialization across active process pool
+            logger.info(f"Serializing {SHARD_SIZE} positions in parallel...")
+            chunksize = max(1, len(paired_positions) // (num_workers * 4))
+            serialized_items = list(executor.map(serialize_position, paired_positions, chunksize=chunksize))
+
+            # 4. Submit pre-serialized raw bytes to the background thread
+            shard_path = f"{output_prefix}/seq_shards/{curr_pos_shard_idx:04d}.tfrecord"
             logger.info(f"Submitting shard {curr_pos_shard_idx:04d} to background writer thread.")
             io_writer_pool.submit(
               write_shard_background,
-              output_prefix,
+              shard_path,
               curr_pos_shard_idx,
-              results_snapshot,
-              sequences_snapshot,
-              global_unique_game_ids,
-              global_lock
+              serialized_items,
+              len(shard_unique_game_ids),
+              total_global_unique
             )
 
             curr_pos_shard_idx += 1
@@ -513,15 +522,26 @@ def process_pgns(
   if curr_results:
     results_snapshot = list(curr_results)
     sequences_snapshot = {k: list(v) for k, v in curr_sequences.items()}
+    
+    shard_unique_game_ids = set()
+    paired_positions = [to_paired(pos, sequences_snapshot, shard_unique_game_ids) for pos in results_snapshot]
+
+    with global_lock:
+      global_unique_game_ids.update(shard_unique_game_ids)
+      total_global_unique = len(global_unique_game_ids)
+
+    chunksize = max(1, len(paired_positions) // (num_workers * 4))
+    serialized_items = list(executor.map(serialize_position, paired_positions, chunksize=chunksize))
+
+    shard_path = f"{output_prefix}/seq_shards/{curr_pos_shard_idx:04d}.tfrecord"
     logger.info(f"Submitting final remaining shard {curr_pos_shard_idx:04d} to background writer thread.")
     io_writer_pool.submit(
       write_shard_background,
-      output_prefix,
+      shard_path,
       curr_pos_shard_idx,
-      results_snapshot,
-      sequences_snapshot,
-      global_unique_game_ids,
-      global_lock
+      serialized_items,
+      len(shard_unique_game_ids),
+      total_global_unique
     )
 
   # Shutdown writer and wait for all tasks to complete cleanly
