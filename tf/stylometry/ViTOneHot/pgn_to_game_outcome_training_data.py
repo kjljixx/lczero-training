@@ -395,7 +395,7 @@ def process_pgns(
   global_lock = threading.Lock()
 
   # Background I/O thread pool
-  io_writer_pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+  io_writer_pool = concurrent.futures.ThreadPoolExecutor(max_workers=4)
 
   if num_workers is None:
     num_workers = os.cpu_count() or 4
