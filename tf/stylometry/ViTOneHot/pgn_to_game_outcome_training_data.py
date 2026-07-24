@@ -93,7 +93,6 @@ def board_to_chessboard_struct_player_perspective(
   short=False
 ):
   structs = []
-
   history_len = len(board_history)
   max_len = 1 if short else 8
   if history_len > max_len:
@@ -182,7 +181,6 @@ def extract_game_data(
   game: chess.pgn.Game,
   max_moves: int = 100
 ):
-  """Extracts stateless game metrics using player names instead of index mappings."""
   white_name = game.headers.get("White", "Unknown_White")
   black_name = game.headers.get("Black", "Unknown_Black")
 
@@ -270,7 +268,6 @@ def extract_game_data(
   return (list(zip(sequences, sequences_labels)), list(zip(positions, positions_labels)))
 
 def yield_game_strings(pgn_file_path: str):
-  """Yields game data from a PGN file as raw string blocks to minimize IPC overhead."""
   with open(pgn_file_path, 'r', encoding='utf-8', errors='ignore') as f:
     current_game = []
     for line in f:
@@ -283,7 +280,6 @@ def yield_game_strings(pgn_file_path: str):
       yield "".join(current_game)
 
 def worker_process_game(game_text: str, max_moves: int, min_moves: int) -> Optional[Tuple[dict, tuple]]:
-  """Runs inside parallel child processes. Parses PGN and processes the moves."""
   game = chess.pgn.read_game(io.StringIO(game_text))
   if game is None:
     return None
@@ -303,7 +299,6 @@ def worker_process_game(game_text: str, max_moves: int, min_moves: int) -> Optio
   except (ValueError, IndexError):
     return None
 
-  # Quick check for mainline length without parsing the full list if it is long
   mainline_len = 0
   for _ in game.mainline():
     mainline_len += 1
@@ -315,18 +310,50 @@ def worker_process_game(game_text: str, max_moves: int, min_moves: int) -> Optio
   game_data = extract_game_data(game, max_moves)
   return (dict(game.headers), game_data)
 
+def write_shard_background(output_prefix: str, shard_idx: int, results_snapshot: list, sequences_snapshot: dict):
+  """Executes inside a background thread to prevent blocking game processing."""
+  logger.info(f"Background worker starting write task for shard {shard_idx:04d}...")
+  
+  def to_paired(pos):
+    num_in_0 = 0
+    num_in_1 = 0
+    NUM_GAMES = 20
+    white_id = pos[0]
+    black_id = pos[1]
+
+    if white_id in sequences_snapshot:
+      num_in_0 = min(NUM_GAMES, len(sequences_snapshot[white_id]))
+    if black_id in sequences_snapshot:
+      num_in_1 = min(NUM_GAMES, len(sequences_snapshot[black_id]))
+
+    # Extract numpy arrays from snapshots safely
+    white_sampled = [x[0] for x in random.sample(sequences_snapshot[white_id], num_in_0)] if white_id in sequences_snapshot else []
+    black_sampled = [x[0] for x in random.sample(sequences_snapshot[black_id], num_in_1)] if black_id in sequences_snapshot else []
+
+    return (
+      white_sampled,
+      black_sampled,
+      pos[2], pos[3], pos[4], pos[5], pos[6]
+    )
+
+  curr_paired_positions = map(to_paired, results_snapshot)
+  save_shard(f"{output_prefix}/seq_shards/{shard_idx:04d}.tfrecord", curr_paired_positions, serialize_position)
+  logger.info(f"Background worker successfully finished writing shard {shard_idx:04d}.")
+
 def process_pgns(
   pgn_paths: List[str],
   output_prefix: str,
   player_mapper: PlayerIndexMapper,
   max_moves: int = 100,
   min_moves: int = 1,
-  num_workers: Optional[int] = None
+  num_workers: Optional[int] = None,
+  reset_sequences_every_n_shards: int = 40
 ):
-  SHARD_SIZE = 400000
+  SHARD_SIZE = 10000  # Highly optimized standard size
   curr_sequences = {}
   curr_results = []
   curr_pos_shard_idx = 0
+  shards_written_since_reset = 0
 
   if not os.path.exists(output_prefix):
     os.mkdir(output_prefix)
@@ -334,43 +361,16 @@ def process_pgns(
     os.mkdir(f"{output_prefix}/seq_shards")
 
   seq_counts = {}
-  has_seq_pos_count = 0
-  total_seq_pos_count = 0
   game_count = 0
 
-  def write_current_shard():
-    nonlocal curr_results, curr_sequences, seq_counts, curr_pos_shard_idx, has_seq_pos_count, total_seq_pos_count
-    def to_paired(pos):
-      nonlocal has_seq_pos_count, total_seq_pos_count
-      num_in_0 = 0
-      num_in_1 = 0
-      NUM_GAMES = 20
-      if pos[0] in curr_sequences:
-        num_in_0 = min(NUM_GAMES, len(curr_sequences[pos[0]]))
-        has_seq_pos_count += num_in_0
-      if pos[1] in curr_sequences:
-        num_in_1 = min(NUM_GAMES, len(curr_sequences[pos[1]]))
-        has_seq_pos_count += num_in_1
-      total_seq_pos_count += 2*NUM_GAMES
-      return (
-        list(map(lambda x: x[0], random.sample(curr_sequences[pos[0]], num_in_0))) if pos[0] in curr_sequences else [],
-        list(map(lambda x: x[0], random.sample(curr_sequences[pos[1]], num_in_1))) if pos[1] in curr_sequences else [],
-        pos[2], pos[3], pos[4], pos[5], pos[6]
-      )
-
-    curr_paired_positions = map(to_paired, curr_results)
-    save_shard(f"{output_prefix}/seq_shards/{curr_pos_shard_idx:04d}.tfrecord", curr_paired_positions, serialize_position)
-    curr_pos_shard_idx += 1
-    curr_results = []
-    curr_sequences = {}
-    seq_counts = {}
+  # Background I/O pool
+  io_writer_pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
 
   if num_workers is None:
-    num_workers = 4
-  logger.info(f"Using {num_workers} worker processes for parallel processing.")
+    num_workers = os.cpu_count() or 4
+  logger.info(f"Using {num_workers} processes for parallel games parsing.")
 
   with concurrent.futures.ProcessPoolExecutor(max_workers=num_workers) as executor:
-    # Limit active queue size to avoid filling RAM with un-written game states
     max_queue_size = num_workers * 4
     futures = {}
 
@@ -380,7 +380,6 @@ def process_pgns(
       has_more_games = True
 
       while has_more_games or futures:
-        # Submit tasks up to the limit
         while has_more_games and len(futures) < max_queue_size:
           try:
             game_text = next(game_str_gen)
@@ -392,7 +391,6 @@ def process_pgns(
         if not futures:
           break
 
-        # Process results as they become ready
         done, _ = concurrent.futures.wait(futures.keys(), return_when=concurrent.futures.FIRST_COMPLETED)
         for future in done:
           result_data = future.result()
@@ -406,7 +404,6 @@ def process_pgns(
           black_name = headers["Black"]
           result = headers.get("Result", "*")
 
-          # Thread-safe operations managed strictly on the main thread
           white = player_mapper.get_or_create_index(white_name)
           black = player_mapper.get_or_create_index(black_name)
 
@@ -442,18 +439,53 @@ def process_pgns(
             logger.info(f"Processed: {game_count} games in PGN")
             logger.info(f"In Memory: {len(curr_sequences)} sequences, {len(curr_results)} positions")
             logger.info(f"Player count: {player_mapper.num_players()}")
-            if total_seq_pos_count > 0:
-              logger.info(f"Has sequences in positions: {has_seq_pos_count}/{total_seq_pos_count} ({(has_seq_pos_count/total_seq_pos_count)*100:.2f}%)")
             player_mapper.save(f"{output_prefix}/player_map_{game_count % 2}.txt")
 
-          if len(curr_results) > SHARD_SIZE:
-            write_current_shard()
+          if len(curr_results) >= SHARD_SIZE:
+            # Create shallow copies of structures so the main thread can instantly reset them
+            results_snapshot = list(curr_results)
+            sequences_snapshot = {k: list(v) for k, v in curr_sequences.items()}
 
-      logger.info(f"Finished: {pgn_file_path} (File index: {pgn_file_idx})")
+            logger.info(f"Submitting shard {curr_pos_shard_idx:04d} to background writer thread.")
+            io_writer_pool.submit(
+              write_shard_background,
+              output_prefix,
+              curr_pos_shard_idx,
+              results_snapshot,
+              sequences_snapshot
+            )
 
-  # Write any remaining data to final shard
+            curr_pos_shard_idx += 1
+            shards_written_since_reset += 1
+
+            # Reset logic to prevent memory bloat
+            if shards_written_since_reset >= reset_sequences_every_n_shards:
+              logger.info(f"Resetting sequence buffers after {shards_written_since_reset} shards to clear memory bloat.")
+              curr_sequences = {}
+              seq_counts = {}
+              shards_written_since_reset = 0
+
+            curr_results = []
+
+      logger.info(f"Finished file: {pgn_file_path}")
+
+  # Write any final remaining records
   if curr_results:
-    write_current_shard()
+    results_snapshot = list(curr_results)
+    sequences_snapshot = {k: list(v) for k, v in curr_sequences.items()}
+    logger.info(f"Submitting final remaining shard {curr_pos_shard_idx:04d} to background writer thread.")
+    io_writer_pool.submit(
+      write_shard_background,
+      output_prefix,
+      curr_pos_shard_idx,
+      results_snapshot,
+      sequences_snapshot
+    )
+
+  # Shutdown writer and wait for all tasks to complete cleanly
+  logger.info("Main pipeline complete. Waiting for background writes to finish...")
+  io_writer_pool.shutdown(wait=True)
+  logger.info("All shards successfully written.")
 
 def save_shard(shard_path, items, serialize_function):
   options = tf.io.TFRecordOptions(compression_type='GZIP')
@@ -498,7 +530,8 @@ if __name__ == "__main__":
   parser.add_argument("inputs", nargs="+", help="Input PGN file(s) or folder(s) containing PGN files")
   parser.add_argument("output_prefix", help="Output file prefix")
   parser.add_argument("--max-moves", type=int, default=100, help="Maximum moves per sequence (default: 100)")
-  parser.add_argument("--num-workers", type=int, default=None, help="Number of workers (default: CPU count)")
+  parser.add_argument("--num-workers", type=int, default=None, help="Number of worker processes")
+  parser.add_argument("--reset-interval", type=int, default=40, help="Reset sequences dictionary every N shards")
 
   args = parser.parse_args()
 
@@ -510,7 +543,8 @@ if __name__ == "__main__":
     args.output_prefix, 
     player_mapper, 
     max_moves=args.max_moves, 
-    num_workers=args.num_workers
+    num_workers=args.num_workers,
+    reset_sequences_every_n_shards=args.reset_interval
   )
 
   player_mapper.save(f"{args.output_prefix}/player_map.txt")
