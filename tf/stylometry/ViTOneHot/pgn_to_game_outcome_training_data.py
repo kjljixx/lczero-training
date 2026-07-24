@@ -310,35 +310,36 @@ def worker_process_game(game_text: str, max_moves: int, min_moves: int) -> Optio
   game_data = extract_game_data(game, max_moves)
   return (dict(game.headers), game_data)
 
-def write_shard_background(output_prefix: str, shard_idx: int, results_snapshot: list, sequences_snapshot: dict):
-  """Executes inside a background thread to prevent blocking game processing."""
-  logger.info(f"Background worker starting write task for shard {shard_idx:04d}...")
-  
-  def to_paired(pos):
-    num_in_0 = 0
-    num_in_1 = 0
-    NUM_GAMES = 20
-    white_id = pos[0]
-    black_id = pos[1]
+def to_paired(pos: tuple, sequences_snapshot: dict) -> tuple:
+  """Quickly structures sequence lists for serialization on the main thread."""
+  num_in_0 = 0
+  num_in_1 = 0
+  NUM_GAMES = 20
+  white_id = pos[0]
+  black_id = pos[1]
 
-    if white_id in sequences_snapshot:
-      num_in_0 = min(NUM_GAMES, len(sequences_snapshot[white_id]))
-    if black_id in sequences_snapshot:
-      num_in_1 = min(NUM_GAMES, len(sequences_snapshot[black_id]))
+  if white_id in sequences_snapshot:
+    num_in_0 = min(NUM_GAMES, len(sequences_snapshot[white_id]))
+  if black_id in sequences_snapshot:
+    num_in_1 = min(NUM_GAMES, len(sequences_snapshot[black_id]))
 
-    # Extract numpy arrays from snapshots safely
-    white_sampled = [x[0] for x in random.sample(sequences_snapshot[white_id], num_in_0)] if white_id in sequences_snapshot else []
-    black_sampled = [x[0] for x in random.sample(sequences_snapshot[black_id], num_in_1)] if black_id in sequences_snapshot else []
+  white_sampled = [x[0] for x in random.sample(sequences_snapshot[white_id], num_in_0)] if white_id in sequences_snapshot else []
+  black_sampled = [x[0] for x in random.sample(sequences_snapshot[black_id], num_in_1)] if black_id in sequences_snapshot else []
 
-    return (
-      white_sampled,
-      black_sampled,
-      pos[2], pos[3], pos[4], pos[5], pos[6]
-    )
+  return (
+    white_sampled,
+    black_sampled,
+    pos[2], pos[3], pos[4], pos[5], pos[6]
+  )
 
-  curr_paired_positions = map(to_paired, results_snapshot)
-  save_shard(f"{output_prefix}/seq_shards/{shard_idx:04d}.tfrecord", curr_paired_positions, serialize_position)
-  logger.info(f"Background worker successfully finished writing shard {shard_idx:04d}.")
+def write_shard_background(shard_path: str, serialized_bytes_list: list):
+  """Writes pre-serialized raw bytes to disk in the background."""
+  logger.info(f"Background worker starting write task for {shard_path}...")
+  options = tf.io.TFRecordOptions(compression_type='GZIP')
+  with tf.io.TFRecordWriter(shard_path, options=options) as writer:
+    for raw_bytes in serialized_bytes_list:
+      writer.write(raw_bytes)
+  logger.info(f"Background worker successfully finished writing task.")
 
 def process_pgns(
   pgn_paths: List[str],
@@ -446,13 +447,22 @@ def process_pgns(
             results_snapshot = list(curr_results)
             sequences_snapshot = {k: list(v) for k, v in curr_sequences.items()}
 
+            # 1. Quick in-memory pairing
+            logger.info(f"Pairing {SHARD_SIZE} positions on main thread...")
+            paired_positions = [to_paired(pos, sequences_snapshot) for pos in results_snapshot]
+
+            # 2. Parallelize CPU-bound serialization across active process pool
+            logger.info(f"Serializing {SHARD_SIZE} positions in parallel...")
+            chunksize = max(1, len(paired_positions) // (num_workers * 4))
+            serialized_items = list(executor.map(serialize_position, paired_positions, chunksize=chunksize))
+
+            # 3. Submit pre-serialized raw bytes to the background thread
+            shard_path = f"{output_prefix}/seq_shards/{curr_pos_shard_idx:04d}.tfrecord"
             logger.info(f"Submitting shard {curr_pos_shard_idx:04d} to background writer thread.")
             io_writer_pool.submit(
               write_shard_background,
-              output_prefix,
-              curr_pos_shard_idx,
-              results_snapshot,
-              sequences_snapshot
+              shard_path,
+              serialized_items
             )
 
             curr_pos_shard_idx += 1
@@ -473,13 +483,17 @@ def process_pgns(
   if curr_results:
     results_snapshot = list(curr_results)
     sequences_snapshot = {k: list(v) for k, v in curr_sequences.items()}
+    
+    paired_positions = [to_paired(pos, sequences_snapshot) for pos in results_snapshot]
+    chunksize = max(1, len(paired_positions) // (num_workers * 4))
+    serialized_items = list(executor.map(serialize_position, paired_positions, chunksize=chunksize))
+
+    shard_path = f"{output_prefix}/seq_shards/{curr_pos_shard_idx:04d}.tfrecord"
     logger.info(f"Submitting final remaining shard {curr_pos_shard_idx:04d} to background writer thread.")
     io_writer_pool.submit(
       write_shard_background,
-      output_prefix,
-      curr_pos_shard_idx,
-      results_snapshot,
-      sequences_snapshot
+      shard_path,
+      serialized_items
     )
 
   # Shutdown writer and wait for all tasks to complete cleanly
