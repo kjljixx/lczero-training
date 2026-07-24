@@ -10,6 +10,8 @@ import logging
 import argparse
 import glob
 import os
+import io
+import concurrent.futures
 
 logger = logging.getLogger(__name__)
 
@@ -55,9 +57,7 @@ class PlayerIndexMapper:
         self.idx_to_player[idx] = player
         self.next_idx = max(self.next_idx, idx + 1)
 
-def get_pgns(
-  pgn_paths: List[str]
-):
+def get_pgns(pgn_paths: List[str]):
   pgn_files = []
   for pgn_path in pgn_paths:
     if os.path.isfile(pgn_path):
@@ -77,7 +77,6 @@ def get_pgns(
       logger.warning(f"Path not found: {pgn_path}")
 
   logger.info(f"# PGNs found: {len(pgn_files)}")
-
   return pgn_files
 
 def _flip_vertical(bb):
@@ -85,97 +84,6 @@ def _flip_vertical(bb):
   bb = ((bb >> 16) & 0x0000FFFF0000FFFF) | ((bb & 0x0000FFFF0000FFFF) << 16)
   bb = (bb >> 32) | ((bb & 0xFFFFFFFF) << 32)
   return bb
-
-def board_to_chessboard_struct(board_history, clock_history, repetition_counts, short=False):
-  structs = []
-
-  history_len = len(board_history)
-  max_len = 1 if short else 8
-  if history_len > max_len:
-    board_history = board_history[:max_len]
-    clock_history = clock_history[:max_len]
-    repetition_counts = repetition_counts[:max_len]
-    history_len = max_len
-
-  for hist_idx in range(history_len):
-    board = board_history[hist_idx]
-    stm = board.turn
-    pcs_1 = 0
-    pcs_2 = 0
-    is_black = stm == chess.BLACK
-    
-    occupied = board.occupied
-    if is_black:
-      occupied = _flip_vertical(occupied)
-    occ = occupied
-    
-    stm_mask = board.occupied_co[stm]
-    opp_mask = board.occupied_co[not stm]
-    
-    piece_bbs = [board.pawns, board.knights, board.bishops, board.rooks, board.queens, board.kings]
-    
-    piece_vals = [0] * 64
-    for pt_idx, pbb in enumerate(piece_bbs):
-      bb = pbb & stm_mask
-      if is_black:
-        bb = _flip_vertical(bb)
-      while bb:
-        sq = (bb & -bb).bit_length() - 1
-        piece_vals[sq] = pt_idx
-        bb &= bb - 1
-      
-      bb = pbb & opp_mask
-      if is_black:
-        bb = _flip_vertical(bb)
-      while bb:
-        sq = (bb & -bb).bit_length() - 1
-        piece_vals[sq] = pt_idx | 8
-        bb &= bb - 1
-    
-    pcs_1_idx = 0
-    pcs_2_idx = 0
-    temp_occ = occ
-    while temp_occ:
-      sq = (temp_occ & -temp_occ).bit_length() - 1
-      val = piece_vals[sq]
-      if pcs_1_idx < 16:
-        pcs_1 |= (val << (4 * pcs_1_idx))
-        pcs_1_idx += 1
-      else:
-        pcs_2 |= (val << (4 * pcs_2_idx))
-        pcs_2_idx += 1
-      temp_occ &= temp_occ - 1
-    structs.extend([occ, pcs_1, pcs_2, clock_history[hist_idx]])
-  for _ in range(max_len - history_len):
-    structs.extend([0, 0, 0, 0])
-
-  #metadata: (5 bits for castling + STM color + 3 bit padding) + (8 bit hm clock) + (8 positions * 2 bits each for repetition count = 16 bits)
-  board = board_history[0]
-  stm = board.turn
-  mtd = 0
-  castle_and_stm = 0
-  if board.has_queenside_castling_rights(stm):
-    castle_and_stm |= 2
-  if board.has_kingside_castling_rights(stm):
-    castle_and_stm |= 4
-  if board.has_queenside_castling_rights(not stm):
-    castle_and_stm |= 8
-  if board.has_kingside_castling_rights(not stm):
-    castle_and_stm |= 16
-  
-  if stm == chess.BLACK:
-    castle_and_stm |= 1
-
-  mtd |= castle_and_stm << 24
-
-  mtd |= (board.halfmove_clock & 0xFF) << 16
-
-  for idx, rep_count in enumerate(repetition_counts):
-    mtd |= min(rep_count, 3) << (2 * idx)
-  structs.append(mtd)
-
-  return np.array(structs, dtype=np.uint64)
-
 
 def board_to_chessboard_struct_player_perspective(
   board_history,
@@ -258,7 +166,6 @@ def board_to_chessboard_struct_player_perspective(
   if board.has_kingside_castling_rights(not player_color):
     castle_and_stm |= 16
 
-  # In player-centric encoding, set bit 0 when it is opponent's turn to move.
   if board.turn != player_color:
     castle_and_stm |= 1
 
@@ -273,16 +180,13 @@ def board_to_chessboard_struct_player_perspective(
 
 def extract_game_data(
   game: chess.pgn.Game,
-  player_mapper: PlayerIndexMapper,
   max_moves: int = 100
 ):
+  """Extracts stateless game metrics using player names instead of index mappings."""
   white_name = game.headers.get("White", "Unknown_White")
   black_name = game.headers.get("Black", "Unknown_Black")
 
-  white_idx = player_mapper.get_or_create_index(white_name)
-  black_idx = player_mapper.get_or_create_index(black_name)
-
-  white_clock = 600 #assume 10 minutes if not specified
+  white_clock = 600
   black_clock = 600
   position_hashes = []
 
@@ -290,7 +194,7 @@ def extract_game_data(
   result = game.headers.get("Result", "*")
 
   sequences = [[], []]
-  sequences_labels = [white_idx, black_idx]
+  sequences_labels = [white_name, black_name]
 
   positions = []
   positions_labels = []
@@ -315,12 +219,12 @@ def extract_game_data(
 
     if moving_color == chess.WHITE:
       target_seq = sequences[0]
-      player_idx = white_idx
-      opp_idx = black_idx
+      player_idx = white_name
+      opp_idx = black_name
     else:
       target_seq = sequences[1]
-      player_idx = black_idx
-      opp_idx = white_idx
+      player_idx = black_name
+      opp_idx = white_name
 
     if len(target_seq) + 2 <= max_moves:
       before_struct = board_to_chessboard_struct_player_perspective(
@@ -338,7 +242,6 @@ def extract_game_data(
         short=True,
       )
 
-      # Keep complete before/after move pairs with player-centric orientation.
       target_seq.append(np.concatenate((before_struct[:4], before_struct[-1:])))
       target_seq.append(np.concatenate((after_struct[:4], after_struct[-1:])))
 
@@ -359,7 +262,6 @@ def extract_game_data(
     if len(sequences[0]) >= max_moves and len(sequences[1]) >= max_moves:
       break
 
-  # Enforce complete before/after pairs.
   if len(sequences[0]) % 2 == 1:
     sequences[0] = sequences[0][:-1]
   if len(sequences[1]) % 2 == 1:
@@ -367,125 +269,191 @@ def extract_game_data(
 
   return (list(zip(sequences, sequences_labels)), list(zip(positions, positions_labels)))
 
-DO_ENGINE_EVAL = False
+def yield_game_strings(pgn_file_path: str):
+  """Yields game data from a PGN file as raw string blocks to minimize IPC overhead."""
+  with open(pgn_file_path, 'r', encoding='utf-8', errors='ignore') as f:
+    current_game = []
+    for line in f:
+      if line.startswith("[Event "):
+        if current_game:
+          yield "".join(current_game)
+          current_game = []
+      current_game.append(line)
+    if current_game:
+      yield "".join(current_game)
 
-if DO_ENGINE_EVAL:
-  engine = chess.engine.SimpleEngine.popen_uci("./stylometry/WinRateStylo/engines/stockfish-17-1")
-  engine.configure({"UCI_ShowWDL": True})
+def worker_process_game(game_text: str, max_moves: int, min_moves: int) -> Optional[Tuple[dict, tuple]]:
+  """Runs inside parallel child processes. Parses PGN and processes the moves."""
+  game = chess.pgn.read_game(io.StringIO(game_text))
+  if game is None:
+    return None
 
-def engine_eval(board):
-  if not DO_ENGINE_EVAL:
-    return [1, 0, 0]
-  info = engine.analyse(board, chess.engine.Limit(depth=10))
-  if "wdl" not in info:
-    assert "score" in info
-    return [1, 0, 0] if info["score"].white().score(mate_score=10000) > 100 else [0, 0, 1] if info["score"].white().score(mate_score=10000) < -100 else [0, 1, 0]
-  score = info["wdl"].white()
-  return score
+  white_name = game.headers.get("White", "?")
+  black_name = game.headers.get("Black", "?")
+  if white_name == "?" or black_name == "?":
+    return None
+
+  time_control = game.headers.get("TimeControl", "600+0")
+  if time_control == "-":
+    return None
+  try:
+    starting_time = int(time_control.split('+')[0])
+    if starting_time < MIN_STARTING_TIME:
+      return None
+  except (ValueError, IndexError):
+    return None
+
+  # Quick check for mainline length without parsing the full list if it is long
+  mainline_len = 0
+  for _ in game.mainline():
+    mainline_len += 1
+    if mainline_len >= min_moves * 2:
+      break
+  if mainline_len < min_moves * 2:
+    return None
+
+  game_data = extract_game_data(game, max_moves)
+  return (dict(game.headers), game_data)
 
 def process_pgns(
   pgn_paths: List[str],
   output_prefix: str,
   player_mapper: PlayerIndexMapper,
   max_moves: int = 100,
-  min_moves: int = 1
+  min_moves: int = 1,
+  num_workers: Optional[int] = None
 ):
   SHARD_SIZE = 400000
   curr_sequences = {}
-
   curr_results = []
-
   curr_pos_shard_idx = 0
+
   if not os.path.exists(output_prefix):
     os.mkdir(output_prefix)
   if not os.path.exists(f"{output_prefix}/seq_shards"):
     os.mkdir(f"{output_prefix}/seq_shards")
 
-  for pgn_file_idx, pgn_file_path in enumerate(pgn_paths):
-    logger.info(f"Processing {pgn_file_path}...")
-    pgn_file = open(pgn_file_path, 'r')
-    game_count = 0
+  seq_counts = {}
+  has_seq_pos_count = 0
+  total_seq_pos_count = 0
+  game_count = 0
 
+  def write_current_shard():
+    nonlocal curr_results, curr_sequences, seq_counts, curr_pos_shard_idx, has_seq_pos_count, total_seq_pos_count
+    def to_paired(pos):
+      nonlocal has_seq_pos_count, total_seq_pos_count
+      num_in_0 = 0
+      num_in_1 = 0
+      NUM_GAMES = 20
+      if pos[0] in curr_sequences:
+        num_in_0 = min(NUM_GAMES, len(curr_sequences[pos[0]]))
+        has_seq_pos_count += num_in_0
+      if pos[1] in curr_sequences:
+        num_in_1 = min(NUM_GAMES, len(curr_sequences[pos[1]]))
+        has_seq_pos_count += num_in_1
+      total_seq_pos_count += 2*NUM_GAMES
+      return (
+        list(map(lambda x: x[0], random.sample(curr_sequences[pos[0]], num_in_0))) if pos[0] in curr_sequences else [],
+        list(map(lambda x: x[0], random.sample(curr_sequences[pos[1]], num_in_1))) if pos[1] in curr_sequences else [],
+        pos[2], pos[3], pos[4], pos[5], pos[6]
+      )
+
+    curr_paired_positions = map(to_paired, curr_results)
+    save_shard(f"{output_prefix}/seq_shards/{curr_pos_shard_idx:04d}.tfrecord", curr_paired_positions, serialize_position)
+    curr_pos_shard_idx += 1
+    curr_results = []
+    curr_sequences = {}
     seq_counts = {}
 
-    has_seq_pos_count = 0
-    total_seq_pos_count = 0
+  if num_workers is None:
+    num_workers = 4
+  logger.info(f"Using {num_workers} worker processes for parallel processing.")
 
-    while True:
-      game = chess.pgn.read_game(pgn_file)
-      if game is None:
-        break
-      if game.headers["White"] == "?" or game.headers["Black"] == "?":
-        continue
-      if game.headers.get("TimeControl", "600+0") == "-" or int(game.headers.get("TimeControl", "600+0").split('+')[0]) < MIN_STARTING_TIME:
-        continue
+  with concurrent.futures.ProcessPoolExecutor(max_workers=num_workers) as executor:
+    # Limit active queue size to avoid filling RAM with un-written game states
+    max_queue_size = num_workers * 4
+    futures = {}
 
-      if len(list(game.mainline())) < min_moves*2:
-        continue
+    for pgn_file_idx, pgn_file_path in enumerate(pgn_paths):
+      logger.info(f"Processing {pgn_file_path}...")
+      game_str_gen = yield_game_strings(pgn_file_path)
+      has_more_games = True
 
-      NUM_GAMES = 20
-      
-      white = player_mapper.get_or_create_index(game.headers["White"])
-      black = player_mapper.get_or_create_index(game.headers["Black"])
-      result = game.headers.get("Result", "*")
-      game_data = extract_game_data(
-        game, player_mapper, max_moves
-      )
-      if seq_counts.get(white, 0) < NUM_GAMES:
-        if white in curr_sequences:
-          curr_sequences[white].append(game_data[0][0])
-        else:
-          curr_sequences[white] = [game_data[0][0]]
-        seq_counts[white] = seq_counts.get(white, 0) + 1
+      while has_more_games or futures:
+        # Submit tasks up to the limit
+        while has_more_games and len(futures) < max_queue_size:
+          try:
+            game_text = next(game_str_gen)
+            future = executor.submit(worker_process_game, game_text, max_moves, min_moves)
+            futures[future] = game_text
+          except StopIteration:
+            has_more_games = False
 
-      if seq_counts.get(black, 0) < NUM_GAMES:
-        if black in curr_sequences:
-          curr_sequences[black].append(game_data[0][1])
-        else:
-          curr_sequences[black] = [game_data[0][1]]
-        seq_counts[black] = seq_counts.get(black, 0) + 1
-      
-      if seq_counts.get(white, 0) >= NUM_GAMES and seq_counts.get(black, 0) >= NUM_GAMES:
-        curr_results.append((white, black, [1, 0, 0] if result == "1-0" else [0, 0, 1] if result == "0-1" else [0, 1, 0],
-                             game.headers["White"], game.headers["Black"]
-                            ,int(game.headers.get("WhiteElo", "0")), int(game.headers.get("BlackElo", "0"))))
+        if not futures:
+          break
 
-      if len(curr_results) > SHARD_SIZE:
-        def to_paired(pos):
-          nonlocal has_seq_pos_count, total_seq_pos_count
-          num_in_0 = 0
-          num_in_1 = 0
+        # Process results as they become ready
+        done, _ = concurrent.futures.wait(futures.keys(), return_when=concurrent.futures.FIRST_COMPLETED)
+        for future in done:
+          result_data = future.result()
+          del futures[future]
+
+          if result_data is None:
+            continue
+
+          headers, game_data = result_data
+          white_name = headers["White"]
+          black_name = headers["Black"]
+          result = headers.get("Result", "*")
+
+          # Thread-safe operations managed strictly on the main thread
+          white = player_mapper.get_or_create_index(white_name)
+          black = player_mapper.get_or_create_index(black_name)
+
           NUM_GAMES = 20
-          if pos[0] in curr_sequences:
-            num_in_0 = min(NUM_GAMES, len(curr_sequences[pos[0]]))
-            has_seq_pos_count += num_in_0
-          if pos[1] in curr_sequences:
-            num_in_1 = min(NUM_GAMES, len(curr_sequences[pos[1]]))
-            has_seq_pos_count += num_in_1
-          total_seq_pos_count += 2*NUM_GAMES
-          return (list(map(lambda x: x[0], random.sample(curr_sequences[pos[0]], num_in_0))) if pos[0] in curr_sequences else [], list(map(lambda x: x[0], random.sample(curr_sequences[pos[1]], num_in_1))) if pos[1] in curr_sequences else [], pos[2],
-                  pos[3], pos[4], pos[5], pos[6])
-        curr_paired_positions = map(to_paired, curr_results)
-        save_shard(f"{output_prefix}/seq_shards/{curr_pos_shard_idx:04d}.tfrecord", curr_paired_positions, serialize_position)
-        curr_pos_shard_idx += 1
-        curr_results = []
-        curr_sequences = {}
-        seq_counts = {}
+          seq_white = (game_data[0][0][0], white)
+          seq_black = (game_data[0][1][0], black)
 
-      result = game.headers.get("Result", "*")
+          if seq_counts.get(white, 0) < NUM_GAMES:
+            if white in curr_sequences:
+              curr_sequences[white].append(seq_white)
+            else:
+              curr_sequences[white] = [seq_white]
+            seq_counts[white] = seq_counts.get(white, 0) + 1
 
-      game_count += 1
-      if game_count % 100 == 0:
-        logger.info(f"Processed: {game_count} games in PGN")
-        logger.info(f"In Memory: {len(curr_sequences)} sequences, {len(curr_results)} positions")
-        logger.info(f"Player count: {player_mapper.num_players()}")
-        logger.info(f"Has sequences in positions: {has_seq_pos_count}/{total_seq_pos_count} ({(has_seq_pos_count/total_seq_pos_count)*100 if total_seq_pos_count > 0 else 0:.2f}%)")
-        player_mapper.save(f"{output_prefix}/player_map_{game_count % 2}.txt")
-    
-    logger.info(f"Finished: {pgn_file_path}")
-    logger.info(f"File Idx: {pgn_file_idx}")
-    logger.info(f"Processed: {game_count} games in PGN")
-    logger.info(f"In Memory: {len(curr_sequences)} sequences, {len(curr_results)} positions")
+          if seq_counts.get(black, 0) < NUM_GAMES:
+            if black in curr_sequences:
+              curr_sequences[black].append(seq_black)
+            else:
+              curr_sequences[black] = [seq_black]
+            seq_counts[black] = seq_counts.get(black, 0) + 1
+
+          if seq_counts.get(white, 0) >= NUM_GAMES and seq_counts.get(black, 0) >= NUM_GAMES:
+            curr_results.append((
+              white, black,
+              [1, 0, 0] if result == "1-0" else [0, 0, 1] if result == "0-1" else [0, 1, 0],
+              white_name, black_name,
+              int(headers.get("WhiteElo", "0") or "0"),
+              int(headers.get("BlackElo", "0") or "0")
+            ))
+
+          game_count += 1
+          if game_count % 1000 == 0:
+            logger.info(f"Processed: {game_count} games in PGN")
+            logger.info(f"In Memory: {len(curr_sequences)} sequences, {len(curr_results)} positions")
+            logger.info(f"Player count: {player_mapper.num_players()}")
+            if total_seq_pos_count > 0:
+              logger.info(f"Has sequences in positions: {has_seq_pos_count}/{total_seq_pos_count} ({(has_seq_pos_count/total_seq_pos_count)*100:.2f}%)")
+            player_mapper.save(f"{output_prefix}/player_map_{game_count % 2}.txt")
+
+          if len(curr_results) > SHARD_SIZE:
+            write_current_shard()
+
+      logger.info(f"Finished: {pgn_file_path} (File index: {pgn_file_idx})")
+
+  # Write any remaining data to final shard
+  if curr_results:
+    write_current_shard()
 
 def save_shard(shard_path, items, serialize_function):
   options = tf.io.TFRecordOptions(compression_type='GZIP')
@@ -518,35 +486,33 @@ def serialize_position(paired_position):
     'opp_player_elo': tf.train.Feature(int64_list=tf.train.Int64List(value=[paired_position[6]])),
     'wdl': tf.train.Feature(float_list=tf.train.FloatList(value=paired_position[2]))
   }
-
   return tf.train.Example(features=tf.train.Features(feature=feature)).SerializeToString()
 
 if __name__ == "__main__":
-
   logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
   np.random.seed(42)
   random.seed(42)
 
-  parser = argparse.ArgumentParser(
-    description="Convert PGN files to training data"
-  )
-  parser.add_argument("inputs", nargs="+",
-                     help="Input PGN file(s) or folder(s) containing PGN files")
+  parser = argparse.ArgumentParser(description="Convert PGN files to training data")
+  parser.add_argument("inputs", nargs="+", help="Input PGN file(s) or folder(s) containing PGN files")
   parser.add_argument("output_prefix", help="Output file prefix")
-  parser.add_argument("--max-moves", type=int, default=100,
-                     help="Maximum moves per sequence (default: 100)")
+  parser.add_argument("--max-moves", type=int, default=100, help="Maximum moves per sequence (default: 100)")
+  parser.add_argument("--num-workers", type=int, default=None, help="Number of workers (default: CPU count)")
 
   args = parser.parse_args()
 
   pgn_files = get_pgns(args.inputs)
-
   player_mapper = PlayerIndexMapper()
 
-  process_pgns(pgn_files, args.output_prefix, player_mapper, max_moves=args.max_moves)
+  process_pgns(
+    pgn_files, 
+    args.output_prefix, 
+    player_mapper, 
+    max_moves=args.max_moves, 
+    num_workers=args.num_workers
+  )
 
   player_mapper.save(f"{args.output_prefix}/player_map.txt")
   logger.info(f"Player mapping path: {args.output_prefix}/player_map.txt")
   logger.info(f"Total players: {player_mapper.num_players()}")
-
-#  python3 stylometry/ViTOneHot/pgn_to_game_outcome_training_data.py stylometry/WinRateStylo/data/lichess-raw/ stylometry/ViTOneHot/data/run2026-03-25
