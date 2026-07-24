@@ -12,6 +12,7 @@ import glob
 import os
 import io
 import concurrent.futures
+import threading
 
 logger = logging.getLogger(__name__)
 
@@ -268,7 +269,11 @@ def extract_game_data(
   seq_0_arr = np.array(sequences[0], dtype=np.uint64) if sequences[0] else np.zeros((0, 5), dtype=np.uint64)
   seq_1_arr = np.array(sequences[1], dtype=np.uint64) if sequences[1] else np.zeros((0, 5), dtype=np.uint64)
 
-  return ([(seq_0_arr, white_name), (seq_1_arr, black_name)], list(zip(positions, positions_labels)))
+  # Generate a collision-free ID to track this game uniquely across resets
+  seq_0_id = random.getrandbits(63)
+  seq_1_id = random.getrandbits(63)
+
+  return ([(seq_0_arr, white_name, seq_0_id), (seq_1_arr, black_name, seq_1_id)], list(zip(positions, positions_labels)))
 
 def yield_game_strings(pgn_file_path: str):
   with open(pgn_file_path, 'r', encoding='utf-8', errors='ignore') as f:
@@ -313,10 +318,19 @@ def worker_process_game(game_text: str, max_moves: int, min_moves: int) -> Optio
   game_data = extract_game_data(game, max_moves)
   return (dict(game.headers), game_data)
 
-def write_shard_background(output_prefix: str, shard_idx: int, results_snapshot: list, sequences_snapshot: dict):
+def write_shard_background(
+  output_prefix: str,
+  shard_idx: int,
+  results_snapshot: list,
+  sequences_snapshot: dict,
+  global_unique_game_ids: set,
+  global_lock: threading.Lock
+):
   """Executes inside a background thread to prevent blocking game processing."""
   logger.info(f"Background worker starting write task for shard {shard_idx:04d}...")
   
+  shard_unique_game_ids = set()
+
   def to_paired(pos):
     num_in_0 = 0
     num_in_1 = 0
@@ -329,9 +343,18 @@ def write_shard_background(output_prefix: str, shard_idx: int, results_snapshot:
     if black_id in sequences_snapshot:
       num_in_1 = min(NUM_GAMES, len(sequences_snapshot[black_id]))
 
-    # Extract single 2D NumPy array matrices (massively lighter payload)
-    white_sampled = [x[0] for x in random.sample(sequences_snapshot[white_id], num_in_0)] if white_id in sequences_snapshot else []
-    black_sampled = [x[0] for x in random.sample(sequences_snapshot[black_id], num_in_1)] if black_id in sequences_snapshot else []
+    # Extract single 2D NumPy array matrices safely
+    white_samples = random.sample(sequences_snapshot[white_id], num_in_0) if white_id in sequences_snapshot else []
+    black_samples = random.sample(sequences_snapshot[black_id], num_in_1) if black_id in sequences_snapshot else []
+
+    # Track unique game sequences using their robust global IDs
+    for x in white_samples:
+      shard_unique_game_ids.add(x[2])
+    for x in black_samples:
+      shard_unique_game_ids.add(x[2])
+
+    white_sampled = [x[0] for x in white_samples]
+    black_sampled = [x[0] for x in black_samples]
 
     return (
       white_sampled,
@@ -341,6 +364,14 @@ def write_shard_background(output_prefix: str, shard_idx: int, results_snapshot:
 
   curr_paired_positions = map(to_paired, results_snapshot)
   save_shard(f"{output_prefix}/seq_shards/{shard_idx:04d}.tfrecord", curr_paired_positions, serialize_position)
+  
+  with global_lock:
+    global_unique_game_ids.update(shard_unique_game_ids)
+    total_global_unique = len(global_unique_game_ids)
+
+  # Log shard-level and cumulative run-level unique games count
+  logger.info(f"Saved {len(shard_unique_game_ids)} unique games in the sequences for shard {shard_idx:04d}.")
+  logger.info(f"Total unique games saved across ALL shards so far: {total_global_unique}")
   logger.info(f"Background worker successfully finished writing shard {shard_idx:04d}.")
 
 def process_pgns(
@@ -365,6 +396,10 @@ def process_pgns(
 
   seq_counts = {}
   game_count = 0
+
+  # Thread-safe global set and lock to monitor cumulative unique games
+  global_unique_game_ids = set()
+  global_lock = threading.Lock()
 
   # Background I/O thread pool
   io_writer_pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
@@ -411,8 +446,8 @@ def process_pgns(
           black = player_mapper.get_or_create_index(black_name)
 
           NUM_GAMES = 20
-          seq_white = (game_data[0][0][0], white)
-          seq_black = (game_data[0][1][0], black)
+          seq_white = (game_data[0][0][0], white, game_data[0][0][2])
+          seq_black = (game_data[0][1][0], black, game_data[0][1][2])
 
           if seq_counts.get(white, 0) < NUM_GAMES:
             if white in curr_sequences:
@@ -455,7 +490,9 @@ def process_pgns(
               output_prefix,
               curr_pos_shard_idx,
               results_snapshot,
-              sequences_snapshot
+              sequences_snapshot,
+              global_unique_game_ids,
+              global_lock
             )
 
             curr_pos_shard_idx += 1
@@ -482,7 +519,9 @@ def process_pgns(
       output_prefix,
       curr_pos_shard_idx,
       results_snapshot,
-      sequences_snapshot
+      sequences_snapshot,
+      global_unique_game_ids,
+      global_lock
     )
 
   # Shutdown writer and wait for all tasks to complete cleanly
@@ -499,7 +538,6 @@ def save_shard(shard_path, items, serialize_function):
   logger.info(f"Saved shard to {shard_path}")
 
 def serialize_position(paired_position):
-  # OPTIMIZATION: pad_and_flatten now copies 2D NumPy slices directly (extremely fast)
   def pad_and_flatten(games, max_games=20, max_moves=100):
     all_game_moves = np.zeros((max_games, max_moves, 5), dtype=np.uint64)
     for i, game in enumerate(games[:max_games]):
