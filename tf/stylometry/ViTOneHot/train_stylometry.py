@@ -1024,10 +1024,10 @@ if __name__ == "__main__":
     default='regression',
     help='Predict scalar Elo values or 8-bin class labels.',
   )
-  parser.add_argument("--hidden-dim", type=int, default=384)
+  parser.add_argument("--hidden-dim", type=int, default=512)
   parser.add_argument("--num-layers", type=int, default=8)
-  parser.add_argument("--num-heads", type=int, default=6)
-  parser.add_argument("--mlp-dim", type=int, default=1536)
+  parser.add_argument("--num-heads", type=int, default=284)
+  parser.add_argument("--mlp-dim", type=int, default=2048)
   parser.add_argument("--ffn-layers", type=int, default=2)
   parser.add_argument("--ffn-hidden-dim", type=int, default=512)
   parser.add_argument("--sample-log-interval-batches", type=int, default=500)
