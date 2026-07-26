@@ -443,6 +443,8 @@ class Net:
             pb_name = attn_pol_to_bp('wq', weights_name)
         elif base_layer == 'policy-attention-wk':
             pb_name = attn_pol_to_bp('wk', weights_name)
+        elif base_layer == 'policy-attention-ppo':
+            pb_name = attn_pol_to_bp('ppo', weights_name)
         elif base_layer == 'value-embedding':
             if weights_name.split(':')[0] == 'kernel':
                 pb_name = 'ip_val_w'
