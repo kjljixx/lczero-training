@@ -18,8 +18,8 @@ def _training_flag(training) -> bool:
 
 
 MAX_MOVES = 100
-NUM_GAMES_MODEL = 1
-NUM_GAMES = 1
+NUM_GAMES_MODEL = 20
+NUM_GAMES = 20
 SEQ_PLANES = 21
 ELO_SCALE = 4000
 BIN_COUNT = 8
@@ -1026,7 +1026,7 @@ if __name__ == "__main__":
   )
   parser.add_argument("--hidden-dim", type=int, default=512)
   parser.add_argument("--num-layers", type=int, default=8)
-  parser.add_argument("--num-heads", type=int, default=284)
+  parser.add_argument("--num-heads", type=int, default=8)
   parser.add_argument("--mlp-dim", type=int, default=2048)
   parser.add_argument("--ffn-layers", type=int, default=2)
   parser.add_argument("--ffn-hidden-dim", type=int, default=512)
