@@ -74,6 +74,10 @@ class GameAggregateViT(tf.keras.Model):
         
         self.pair_projection = layers.Dense(units=hidden_dim, activation='relu')
 
+        # BiasAdd GPU kernels multiply N*H*W*C as int32. With embedding_size=768
+        # and 8x8 planes, keep chunks under ~2^31/(768*64) ≈ 43k positions.
+        self.move_proj_chunk_size = 4096
+
         #sin position encoding like paper recommended
         self.positional_encoding = get_sinusoidal_positional_encoding(
             max_positions=self.paired_max_moves,
@@ -94,21 +98,68 @@ class GameAggregateViT(tf.keras.Model):
             patch_size=1,  # Since we already have embeddings, no patching needed
         )
     
+    def _project_moves(self, moves_21, training):
+        """Pad to 112 planes and run move_projection in chunks.
+
+        BiasAdd GPU kernels multiply N*H*W*C as int32. With embedding_size=768
+        and 8x8 planes, a single launch of batch*games*moves positions overflows
+        (e.g. 32*20*100*8*8*768 → -1149239296). Chunk to stay under ~43k.
+        """
+        num_positions = moves_21.shape[0]
+        chunk_size = self.move_proj_chunk_size
+        d_type = moves_21.dtype
+
+        def _project_chunk(chunk_21):
+            n = tf.shape(chunk_21)[0]
+            padded = tf.concat([
+                chunk_21[:, :13],
+                tf.zeros((n, 91, 8, 8), dtype=d_type),
+                chunk_21[:, -8:],
+            ], axis=1)
+            out = self.move_projection(padded, training=training)
+            return tf.reshape(out, [-1, self.hidden_dim])
+
+        # Eager path (train_stylometry uses run_eagerly=True).
+        if num_positions is not None:
+            n = int(num_positions)
+            if n == 0:
+                return tf.zeros((0, self.hidden_dim), dtype=tf.float32)
+            chunks = [
+                _project_chunk(moves_21[start:start + chunk_size])
+                for start in range(0, n, chunk_size)
+            ]
+            return tf.concat(chunks, axis=0) if len(chunks) > 1 else chunks[0]
+
+        # Graph path.
+        num_positions_t = tf.shape(moves_21)[0]
+
+        def _body(start, embeddings):
+            end = tf.minimum(start + chunk_size, num_positions_t)
+            embeddings = embeddings.write(start // chunk_size, _project_chunk(moves_21[start:end]))
+            return end, embeddings
+
+        num_chunks = (num_positions_t + chunk_size - 1) // chunk_size
+        embeddings_ta = tf.TensorArray(
+            dtype=tf.float32,
+            size=num_chunks,
+            dynamic_size=False,
+            element_shape=[None, self.hidden_dim],
+        )
+        _, embeddings_ta = tf.while_loop(
+            cond=lambda start, _: start < num_positions_t,
+            body=_body,
+            loop_vars=(tf.constant(0), embeddings_ta),
+            parallel_iterations=1,
+        )
+        return embeddings_ta.concat()
+
     def call(self, inputs, training=None, mask=None):
         move_features = inputs  # (batch, num_moves, 21, 8, 8)
         batch_size = tf.shape(move_features)[0]
         num_moves = tf.shape(move_features)[1]
-        d_type = move_features.dtype
 
         moves_reshaped = tf.reshape(move_features, [-1, 21, 8, 8])  # (batch*num_moves, 21, 8, 8)
-        moves_reshaped = tf.concat([
-            moves_reshaped[:, :13],
-            tf.zeros((batch_size * num_moves, 91, 8, 8), dtype=d_type),
-            moves_reshaped[:, -8:]
-        ], axis=1)  # (batch*num_moves, 112, 8, 8)
-        move_embeddings = self.move_projection(moves_reshaped, training=training)
-
-        move_embeddings = tf.reshape(move_embeddings, [-1, self.hidden_dim])
+        move_embeddings = self._project_moves(moves_reshaped, training=training)
         x = tf.reshape(move_embeddings, [batch_size, num_moves, self.hidden_dim])
 
         x_even = x[:, 0::2, :]
