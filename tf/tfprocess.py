@@ -1385,25 +1385,44 @@ class TFProcess:
                         gen_sz: int,
                         name: str,
                         activation='swish'):
-        # epsilon=1e-6 disables fused LayerNorm (FusedBatchNormV3/cuDNN), matching
-        # encoder ln1/ln2. Default 1e-3 hits fused path and can fail with
-        # "No DNN support for stream" when cuDNN is unavailable/misconfigured.
-        compressed = tf_keras.layers.Dense(hidden_channels,
-                                           name=name + '/compress',
-                                           use_bias=False)(inputs)
+        # Cache layer objects by name so MHALayer.call reuses them (creating
+        # new Dense/LN every forward would leak memory and drop restored weights).
+        # Keep these as standalone named layers (not MHALayer sublayers) so TF
+        # checkpoint paths stay compatible with existing nets.
+        # epsilon=1e-6 disables fused LayerNorm (FusedBatchNormV3/cuDNN).
+        if not hasattr(self, '_smolgen_layer_cache'):
+            self._smolgen_layer_cache = {}
+        if name not in self._smolgen_layer_cache:
+            self._smolgen_layer_cache[name] = {
+                'compress':
+                    tf_keras.layers.Dense(hidden_channels,
+                                          name=name + '/compress',
+                                          use_bias=False),
+                'hidden1_dense':
+                    tf_keras.layers.Dense(hidden_sz,
+                                          name=name + '/hidden1_dense',
+                                          activation=activation),
+                'hidden1_ln':
+                    tf_keras.layers.LayerNormalization(
+                        epsilon=1e-6, name=name + '/hidden1_ln'),
+                'gen_from':
+                    tf_keras.layers.Dense(heads * gen_sz,
+                                          name=name + '/gen_from',
+                                          activation=activation),
+                'gen_from_ln':
+                    tf_keras.layers.LayerNormalization(
+                        epsilon=1e-6, name=name + '/gen_from_ln'),
+            }
+        layers = self._smolgen_layer_cache[name]
+
+        compressed = layers['compress'](inputs)
         compressed = tf.reshape(compressed, [-1, 64 * hidden_channels])
 
-        hidden = tf_keras.layers.Dense(hidden_sz,
-                                       name=name + '/hidden1_dense',
-                                       activation=activation)(compressed)
-        hidden = tf_keras.layers.LayerNormalization(
-            epsilon=1e-6, name=name + '/hidden1_ln')(hidden)
+        hidden = layers['hidden1_dense'](compressed)
+        hidden = layers['hidden1_ln'](hidden)
 
-        gen_from = tf_keras.layers.Dense(heads * gen_sz,
-                                         name=name + '/gen_from',
-                                         activation=activation)(hidden)
-        gen_from = tf_keras.layers.LayerNormalization(
-            epsilon=1e-6, name=name + '/gen_from_ln')(gen_from)
+        gen_from = layers['gen_from'](hidden)
+        gen_from = layers['gen_from_ln'](gen_from)
         gen_from = tf.reshape(gen_from, [-1, heads, gen_sz])
         out = self.smol_weight_gen_dense(gen_from)
         return tf.reshape(out, [-1, heads, 64, 64])
@@ -1725,44 +1744,6 @@ class MHALayer(tf_keras.layers.Layer):
             self.emb_size, name=self.name + "-dense",
             kernel_initializer=self.initializer)
 
-        # Own smolgen sublayers. Calling TFProcess.smolgen_weights from call()
-        # re-created Dense/LN every forward pass (memory leak + broken weights).
-        self.use_smolgen = process.use_smolgen
-        if self.use_smolgen:
-            act = process.smolgen_activation
-            self.smolgen_hidden_channels = process.smolgen_hidden_channels
-            self.smolgen_gen_sz = process.smolgen_gen_sz
-            # Relative names → encoder_N/mha/smolgen/... (matches net.py / restore)
-            self.smolgen_compress = tf_keras.layers.Dense(
-                process.smolgen_hidden_channels,
-                name='smolgen/compress',
-                use_bias=False)
-            self.smolgen_hidden1_dense = tf_keras.layers.Dense(
-                process.smolgen_hidden_sz,
-                name='smolgen/hidden1_dense',
-                activation=act)
-            # epsilon=1e-6: non-fused LN (avoid FusedBatchNormV3/cuDNN)
-            self.smolgen_hidden1_ln = tf_keras.layers.LayerNormalization(
-                epsilon=1e-6, name='smolgen/hidden1_ln')
-            self.smolgen_gen_from = tf_keras.layers.Dense(
-                num_heads * process.smolgen_gen_sz,
-                name='smolgen/gen_from',
-                activation=act)
-            self.smolgen_gen_from_ln = tf_keras.layers.LayerNormalization(
-                epsilon=1e-6, name='smolgen/gen_from_ln')
-
-    def _smolgen_weights(self, inputs):
-        compressed = self.smolgen_compress(inputs)
-        compressed = tf.reshape(
-            compressed, [-1, 64 * self.smolgen_hidden_channels])
-        hidden = self.smolgen_hidden1_dense(compressed)
-        hidden = self.smolgen_hidden1_ln(hidden)
-        gen_from = self.smolgen_gen_from(hidden)
-        gen_from = self.smolgen_gen_from_ln(gen_from)
-        gen_from = tf.reshape(gen_from, [-1, self.num_heads, self.smolgen_gen_sz])
-        out = self.process.smol_weight_gen_dense(gen_from)
-        return tf.reshape(out, [-1, self.num_heads, 64, 64])
-
     def call(self, inputs):
         q = self.wq(inputs)
         k = self.wk(inputs)
@@ -1773,17 +1754,8 @@ class MHALayer(tf_keras.layers.Layer):
         k = TFProcess.split_heads(k, batch_size, self.num_heads, self.depth)
         v = TFProcess.split_heads(v, batch_size, self.num_heads, self.depth)
 
-        matmul_qk = tf.matmul(q, k, transpose_b=True)
-        dk = tf.cast(tf.shape(k)[-1], self.process.model_dtype)
-        scaled_attention_logits = matmul_qk / tf.math.sqrt(dk)
-        if self.use_smolgen:
-            scaled_attention_logits = (
-                scaled_attention_logits + self._smolgen_weights(inputs))
-        attention_probs = tf.nn.softmax(scaled_attention_logits, axis=-1)
-        scaled_attention = tf.matmul(attention_probs, v)
-        # Second return matches scaled_dot_product_attention: pre-softmax logits.
-        attention_weights = scaled_attention_logits
-
+        scaled_attention, attention_weights = self.process.scaled_dot_product_attention(
+            q, k, v, name=self.name, inputs=inputs)
         if self.num_heads > 1:
             scaled_attention = tf.transpose(scaled_attention,
                                             perm=[0, 2, 1, 3])
