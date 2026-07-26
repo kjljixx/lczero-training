@@ -74,9 +74,11 @@ class GameAggregateViT(tf.keras.Model):
         
         self.pair_projection = layers.Dense(units=hidden_dim, activation='relu')
 
-        # BiasAdd GPU kernels multiply N*H*W*C as int32. With embedding_size=768
-        # and 8x8 planes, keep chunks under ~2^31/(768*64) ≈ 43k positions.
-        self.move_proj_chunk_size = 4096
+        # BiasAdd GPU kernels multiply N*H*W*C as int32 (limit ~43k positions at
+        # emb=768). The 15-layer encoder is the tighter bound: LC0 trains this net
+        # at microbatch 512 (batch 2048 / 4 splits). Larger chunks OOM and cuDNN
+        # fails with "No DNN support for stream" on fused LayerNorm/FusedBatchNorm.
+        self.move_proj_chunk_size = 512
 
         #sin position encoding like paper recommended
         self.positional_encoding = get_sinusoidal_positional_encoding(
@@ -101,9 +103,11 @@ class GameAggregateViT(tf.keras.Model):
     def _project_moves(self, moves_21, training):
         """Pad to 112 planes and run move_projection in chunks.
 
-        BiasAdd GPU kernels multiply N*H*W*C as int32. With embedding_size=768
-        and 8x8 planes, a single launch of batch*games*moves positions overflows
-        (e.g. 32*20*100*8*8*768 → -1149239296). Chunk to stay under ~43k.
+        Two limits force chunking:
+        1) BiasAdd GPU kernels multiply N*H*W*C as int32 (overflow at ~43k
+           positions for emb=768, e.g. 32*20*100 → 64000).
+        2) Encoder activations (15 layers, 24-head smolgen) OOM well before that;
+           keep chunks near LC0's microbatch (512).
         """
         num_positions = moves_21.shape[0]
         chunk_size = self.move_proj_chunk_size
