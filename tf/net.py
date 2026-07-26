@@ -357,6 +357,8 @@ class Net:
 
         def mha_to_bp(l, w):
             s = ''
+            if l.startswith('mha-'):
+                l = l[4:]
             if l.startswith('dense'):
                 s = 'dense'
             elif l.startswith('w'):
@@ -368,6 +370,15 @@ class Net:
             d = {'kernel': '{}_w', 'bias': '{}_b'}
 
             return d[w].format(s)
+
+        def mha_sublayer_name(layers):
+            # Functional API: encoder_N/mha/wq/kernel
+            # MHALayer (tf_keras): encoder_N/mha/encoder_N/mha-wq/kernel
+            mha_idx = layers.index('mha')
+            for layer in layers[mha_idx + 1:]:
+                if layer.startswith('mha-'):
+                    return layer
+            return layers[mha_idx + 1]
 
         def mha_smolgen_to_bp(l, w):
             s = {
@@ -423,6 +434,20 @@ class Net:
             pb_name = 'input.' + convblock_to_bp(weights_name)
         elif base_layer == 'policy1':
             pb_name = 'policy1.' + convblock_to_bp(weights_name)
+        elif base_layer == 'policy-embedding':
+            if weights_name.split(':')[0] == 'kernel':
+                pb_name = 'ip_pol_w'
+            else:
+                pb_name = 'ip_pol_b'
+        elif base_layer == 'policy-attention-wq':
+            pb_name = attn_pol_to_bp('wq', weights_name)
+        elif base_layer == 'policy-attention-wk':
+            pb_name = attn_pol_to_bp('wk', weights_name)
+        elif base_layer == 'value-embedding':
+            if weights_name.split(':')[0] == 'kernel':
+                pb_name = 'ip_val_w'
+            else:
+                pb_name = 'ip_val_b'
         elif base_layer == 'policy':
             if 'dense' in layers[1]:
                 pb_name = conv_policy_to_bp(weights_name)
@@ -436,7 +461,8 @@ class Net:
             elif layers[1].startswith('enc_layer_'):
                 pol_encoder_block = int(layers[1].split('_')[2]) - 1
                 if layers[2] == 'mha':
-                    pb_name = 'mha.' + mha_to_bp(layers[3], weights_name)
+                    pb_name = 'mha.' + mha_to_bp(
+                        mha_sublayer_name(layers), weights_name)
                 elif layers[2] == 'ffn':
                     pb_name = 'ffn.' + ffn_to_bp(layers[3], weights_name)
                 else:
@@ -468,7 +494,8 @@ class Net:
                     pb_name = 'mha.smolgen.' + mha_smolgen_to_bp(
                         layers[3], weights_name)
                 else:
-                    pb_name = 'mha.' + mha_to_bp(layers[2], weights_name)
+                    pb_name = 'mha.' + mha_to_bp(
+                        mha_sublayer_name(layers), weights_name)
             elif layers[1] == 'ffn':
                 pb_name = 'ffn.' + ffn_to_bp(layers[2], weights_name)
             else:
