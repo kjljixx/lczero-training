@@ -43,38 +43,72 @@ class GameAggregateViT(tf.keras.Model):
 
         with open(CONFIG_FILE_PATH, 'r') as file:
             cfg = yaml.safe_load(file)
-        
-        tfp = TFProcess(cfg)
-        tfp.init_net(use_heads=False)
-        tfp.restore()
-        
-        # ONLY extract body, not heads. Freeze LC0 weights so stylometry
-        # training only updates pair_projection / ViT / elo heads (avoids
-        # GradientTape OOM from 15-layer encoder activations).
-        input_var = tf.keras.Input(shape=(112, 8, 8))
-        assert isinstance(cfg, dict)
-        self.move_compress = None
-        if cfg['model'].get('encoder_layers', 0) > 0:
-            embedding_size = cfg['model'].get('embedding_size', cfg['model'].get('filters'))
-            flow, _ = tfp.create_encoder_body(input_var, embedding_size)
-            flow = tf.keras.layers.GlobalAveragePooling1D()(flow)
-            self.move_projection = tf.keras.Model(inputs=input_var, outputs=flow)
-            self.lc0_embedding_dim = int(embedding_size)
-            if flow.shape[-1] != self.hidden_dim:
-              self.move_compress = layers.Dense(units=self.hidden_dim, activation='relu')
-        else:
-            filters = cfg['model']['filters']
-            self.move_projection = tfp.model
-            self.lc0_embedding_dim = filters * 8 * 8
-            if filters * 8 * 8 != self.hidden_dim:
-              print("Stylo ViT Using compression layer")
-              self.move_compress = tf.keras.Sequential([
-                  layers.Flatten(),
-                  layers.Dense(units=self.hidden_dim, activation='relu'),
-              ])
 
-        self.move_projection.trainable = False
-        print("Frozen LC0 move_projection body (stylometry trains ViT + heads only)")
+        # LC0's attention does matmul_qk / sqrt(dk) with dk cast to
+        # TFProcess.model_dtype (float32 from yaml). Under mixed_float16 the
+        # matmul becomes float16 and that divide crashes. Build/freeze the LC0
+        # body in float32, then restore the caller's policy for trainable layers.
+        try:
+            prev_policy = tf.keras.mixed_precision.global_policy()
+        except Exception:
+            prev_policy = None
+        try:
+            tf.keras.mixed_precision.set_global_policy('float32')
+        except Exception:
+            try:
+                tf.keras.mixed_precision.experimental.set_policy('float32')
+            except Exception:
+                pass
+
+        needs_compress = False
+        compress_is_seq = False
+        try:
+            tfp = TFProcess(cfg)
+            tfp.init_net(use_heads=False)
+            tfp.restore()
+
+            # ONLY extract body, not heads. Freeze LC0 weights so stylometry
+            # training only updates pair_projection / ViT / elo heads (avoids
+            # GradientTape OOM from 15-layer encoder activations).
+            input_var = tf.keras.Input(shape=(112, 8, 8))
+            assert isinstance(cfg, dict)
+            self.move_compress = None
+            if cfg['model'].get('encoder_layers', 0) > 0:
+                embedding_size = cfg['model'].get('embedding_size', cfg['model'].get('filters'))
+                flow, _ = tfp.create_encoder_body(input_var, embedding_size)
+                flow = tf.keras.layers.GlobalAveragePooling1D()(flow)
+                self.move_projection = tf.keras.Model(inputs=input_var, outputs=flow)
+                self.lc0_embedding_dim = int(embedding_size)
+                needs_compress = flow.shape[-1] != self.hidden_dim
+                compress_is_seq = False
+            else:
+                filters = cfg['model']['filters']
+                self.move_projection = tfp.model
+                self.lc0_embedding_dim = filters * 8 * 8
+                needs_compress = filters * 8 * 8 != self.hidden_dim
+                compress_is_seq = True
+
+            self.move_projection.trainable = False
+            print("Frozen LC0 move_projection body (stylometry trains ViT + heads only)")
+        finally:
+            if prev_policy is not None:
+                try:
+                    tf.keras.mixed_precision.set_global_policy(prev_policy)
+                except Exception:
+                    try:
+                        tf.keras.mixed_precision.experimental.set_policy(prev_policy.name)
+                    except Exception:
+                        pass
+
+        if needs_compress:
+            if compress_is_seq:
+                print("Stylo ViT Using compression layer")
+                self.move_compress = tf.keras.Sequential([
+                    layers.Flatten(),
+                    layers.Dense(units=self.hidden_dim, activation='relu'),
+                ])
+            else:
+                self.move_compress = layers.Dense(units=self.hidden_dim, activation='relu')
 
         self.pair_projection = layers.Dense(units=hidden_dim, activation='relu')
 
@@ -116,15 +150,16 @@ class GameAggregateViT(tf.keras.Model):
            keep chunks near LC0's microbatch (512).
         """
         chunk_size = self.move_proj_chunk_size
-        d_type = moves_21.dtype
         num_positions_t = tf.shape(moves_21)[0]
         out_dim = self.lc0_embedding_dim
 
         def _project_chunk(chunk_21):
             n = tf.shape(chunk_21)[0]
+            # Frozen LC0 body is float32; cast in case callers pass float16.
+            chunk_21 = tf.cast(chunk_21, tf.float32)
             padded = tf.concat([
                 chunk_21[:, :13],
-                tf.zeros((n, 91, 8, 8), dtype=d_type),
+                tf.zeros((n, 91, 8, 8), dtype=tf.float32),
                 chunk_21[:, -8:],
             ], axis=1)
             # Inference-only on frozen LC0 body (no BN updates).
