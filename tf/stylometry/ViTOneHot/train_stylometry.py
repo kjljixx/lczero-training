@@ -570,7 +570,19 @@ class GameOutcomePredictor(tf.keras.Model):
     return outputs
 
   def train_step(self, data):
-    results = super().train_step(data)
+    x, y = data
+    vit = self.elo_predictor.vit
+    with tf.GradientTape() as tape:
+      vit._stop_recording_ctx = tape.stop_recording
+      try:
+        y_pred = self(x, training=True)
+        loss = self.compiled_loss(y, y_pred, regularization_losses=self.losses)
+      finally:
+        vit._stop_recording_ctx = None
+    gradients = tape.gradient(loss, self.trainable_variables)
+    self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
+    self.compiled_metrics.update_state(y, y_pred)
+    results = {m.name: m.result() for m in self.metrics}
     if 'w_loss' in results:
       del results['w_loss']
     return results
@@ -818,6 +830,14 @@ def train_model(
       bin_count=BIN_COUNT,
     )
   assert isinstance(model, GameOutcomePredictor)
+
+  # Ensure LC0 body stays frozen even when loading older checkpoints.
+  vit = model.elo_predictor.vit
+  if hasattr(vit, 'move_projection'):
+    vit.move_projection.trainable = False
+  trainable_params = int(sum(tf.keras.backend.count_params(w) for w in model.trainable_weights))
+  total_params = int(sum(tf.keras.backend.count_params(w) for w in model.weights))
+  print(f"Trainable params: {trainable_params:,} / {total_params:,} total")
 
   if classify_elo:
     model.compile(

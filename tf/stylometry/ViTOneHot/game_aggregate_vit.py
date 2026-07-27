@@ -48,30 +48,35 @@ class GameAggregateViT(tf.keras.Model):
         tfp.init_net(use_heads=False)
         tfp.restore()
         
-        # ONLY extract body, not heads
+        # ONLY extract body, not heads. Freeze LC0 weights so stylometry
+        # training only updates pair_projection / ViT / elo heads (avoids
+        # GradientTape OOM from 15-layer encoder activations).
         input_var = tf.keras.Input(shape=(112, 8, 8))
         assert isinstance(cfg, dict)
+        self.move_compress = None
         if cfg['model'].get('encoder_layers', 0) > 0:
             embedding_size = cfg['model'].get('embedding_size', cfg['model'].get('filters'))
             flow, _ = tfp.create_encoder_body(input_var, embedding_size)
-            # print(flow.shape)
             flow = tf.keras.layers.GlobalAveragePooling1D()(flow)
-            if flow.shape[-1] != self.hidden_dim:
-              flow = layers.Dense(units=self.hidden_dim, activation='relu')(flow)
-            # assert flow.shape[2] == self.hidden_dim, f"Expected encoder output dim {self.hidden_dim}, got {flow.shape[2]}"
             self.move_projection = tf.keras.Model(inputs=input_var, outputs=flow)
+            if flow.shape[-1] != self.hidden_dim:
+              self.move_compress = layers.Dense(units=self.hidden_dim, activation='relu')
         else:
             filters = cfg['model']['filters']
-            # assert self.hidden_dim == filters * 8 * 8, f"Expected hidden dim {filters * 8 * 8}, got {self.hidden_dim}"
             self.move_projection = tfp.model
             if filters * 8 * 8 != self.hidden_dim:
               print("Stylo ViT Using compression layer")
-              self.move_projection = tf.keras.Sequential([
-                  self.move_projection,
+              self.move_compress = tf.keras.Sequential([
                   layers.Flatten(),
-                  layers.Dense(units=self.hidden_dim, activation='relu')
+                  layers.Dense(units=self.hidden_dim, activation='relu'),
               ])
-        
+
+        self.move_projection.trainable = False
+        print("Frozen LC0 move_projection body (stylometry trains ViT + heads only)")
+        # Set by GameOutcomePredictor.train_step to tape.stop_recording so body
+        # forwards are not recorded on GradientTape (avoids activation OOM).
+        self._stop_recording_ctx = None
+
         self.pair_projection = layers.Dense(units=hidden_dim, activation='relu')
 
         # BiasAdd GPU kernels multiply N*H*W*C as int32 (limit ~43k positions at
@@ -120,7 +125,22 @@ class GameAggregateViT(tf.keras.Model):
                 tf.zeros((n, 91, 8, 8), dtype=d_type),
                 chunk_21[:, -8:],
             ], axis=1)
-            out = self.move_projection(padded, training=training)
+
+            def _run_body():
+              # Inference-only on frozen LC0 body (no BN updates).
+              return self.move_projection(padded, training=False)
+
+            # When a GradientTape is active, pause recording so encoder
+            # activations are not retained for backprop (trainable=False and
+            # stop_gradient alone still OOM — body ops are recorded first).
+            if self._stop_recording_ctx is not None:
+              with self._stop_recording_ctx():
+                out = _run_body()
+            else:
+              out = _run_body()
+            out = tf.stop_gradient(out)
+            if self.move_compress is not None:
+              out = self.move_compress(out, training=training)
             return tf.reshape(out, [-1, self.hidden_dim])
 
         # Eager path (train_stylometry uses run_eagerly=True).
