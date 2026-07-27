@@ -835,9 +835,6 @@ def train_model(
   vit = model.elo_predictor.vit
   if hasattr(vit, 'move_projection'):
     vit.move_projection.trainable = False
-  trainable_params = int(sum(tf.keras.backend.count_params(w) for w in model.trainable_weights))
-  total_params = int(sum(tf.keras.backend.count_params(w) for w in model.weights))
-  print(f"Trainable params: {trainable_params:,} / {total_params:,} total")
 
   if classify_elo:
     model.compile(
@@ -888,6 +885,10 @@ def train_model(
     print("e1:", preds['e1'].numpy())
     print("e_d:", preds['e_d'].numpy())
     print("e_d_true:", labels['e_d'].numpy())
+
+  trainable_params = int(sum(tf.keras.backend.count_params(w) for w in model.trainable_weights))
+  total_params = int(sum(tf.keras.backend.count_params(w) for w in model.weights))
+  print(f"Trainable params: {trainable_params:,} / {total_params:,} total")
 
   try:
     pre_val_metrics = model.evaluate(
