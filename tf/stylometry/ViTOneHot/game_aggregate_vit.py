@@ -2,7 +2,7 @@ import yaml
 import tensorflow as tf
 import numpy as np
 from tensorflow.keras import layers # type: ignore
-from official.vision.modeling.backbones.vision_transformer import VisionTransformer
+from official.vision.modeling.backbones.vit import VisionTransformer  # type: ignore
 
 from tfprocess import TFProcess
 
