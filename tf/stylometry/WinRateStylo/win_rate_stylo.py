@@ -2,7 +2,6 @@ import yaml
 import tensorflow as tf
 import numpy as np
 from tensorflow.keras import layers # type: ignore
-import tensorflow_models as tfm # type: ignore
 
 from tfprocess import TFProcess
 from stylometry.ViTOneHot.game_aggregate_vit import GameAggregateViT

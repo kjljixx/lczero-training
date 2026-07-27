@@ -2,7 +2,7 @@ import yaml
 import tensorflow as tf
 import numpy as np
 from tensorflow.keras import layers # type: ignore
-import tensorflow_models as tfm # type: ignore
+from official.vision.modeling.backbones.vision_transformer import VisionTransformer
 
 from tfprocess import TFProcess
 
@@ -93,7 +93,7 @@ class GameAggregateViT(tf.keras.Model):
         # Use paired_max_moves as the height dimension.
         input_specs = tf.keras.layers.InputSpec(shape=[None, self.paired_max_moves, 1, hidden_dim])
         
-        self.vit = tfm.vision.backbones.VisionTransformer(
+        self.vit = VisionTransformer(
             num_layers=num_layers,
             num_heads=num_heads,
             hidden_size=hidden_dim,
