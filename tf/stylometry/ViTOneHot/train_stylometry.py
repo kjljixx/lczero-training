@@ -17,30 +17,6 @@ def _training_flag(training) -> bool:
   return bool(training) if training is not None else False
 
 
-def _set_mixed_precision(enabled: bool) -> bool:
-  """Enable mixed_float16 if requested. Returns True when active."""
-  if not enabled:
-    return False
-  try:
-    policy = tf.keras.mixed_precision.Policy('mixed_float16')
-    tf.keras.mixed_precision.set_global_policy(policy)
-    print(f"Mixed precision policy: {tf.keras.mixed_precision.global_policy().name}")
-  except Exception:
-    # Legacy TF / tf_keras path used by some LC0 training setups.
-    tf.keras.mixed_precision.experimental.set_policy('mixed_float16')
-    print("Mixed precision policy: mixed_float16 (experimental)")
-  return True
-
-
-def _wrap_optimizer(optimizer, use_mixed_precision: bool):
-  if not use_mixed_precision:
-    return optimizer
-  try:
-    return tf.keras.mixed_precision.LossScaleOptimizer(optimizer)
-  except AttributeError:
-    return tf.keras.mixed_precision.experimental.LossScaleOptimizer(optimizer)
-
-
 MAX_MOVES = 100
 NUM_GAMES_MODEL = 20
 NUM_GAMES = 20
@@ -423,12 +399,12 @@ class EloPredictor(tf.keras.Model):
     if self.classify_elo:
       self.classification_head = tf.keras.Sequential(
         [tf.keras.layers.Dense(ffn_hidden_dim, activation='relu') for _ in range(ffn_layers)]
-        + [tf.keras.layers.Dense(bin_count, activation='softmax', dtype='float32')]
+        + [tf.keras.layers.Dense(bin_count, activation='softmax')]
       )
     else:
       self.regression_head = tf.keras.Sequential(
         [tf.keras.layers.Dense(ffn_hidden_dim, activation='relu') for _ in range(ffn_layers)]
-        + [tf.keras.layers.Dense(1, dtype='float32')]
+        + [tf.keras.layers.Dense(1)]
       )
 
   def get_config(self):
@@ -595,9 +571,7 @@ class GameOutcomePredictor(tf.keras.Model):
       else:
         e1_class = tf.reduce_mean(game_probs1, axis=1)
 
-    elo_diff = tf.cast(elo0 - elo1, tf.float32)
-    elo0 = tf.cast(elo0, tf.float32)
-    elo1 = tf.cast(elo1, tf.float32)
+    elo_diff = (elo0 - elo1)
     draw_margin = 21.57  # represent approx 0.062 win prob as found empirically
     # Convert elo difference to win/draw/loss probabilities using glicko 2. 0.9 represents typical rating deviation dampening
     p_win = 1 / (1 + tf.pow(10.0, 0.9 * (-elo_diff + draw_margin) / (400)))
@@ -648,11 +622,7 @@ class GameOutcomePredictor(tf.keras.Model):
         training=True,
       )
       loss = self.compiled_loss(y, y_pred, regularization_losses=self.losses)
-      if hasattr(self.optimizer, 'get_scaled_loss'):
-        loss = self.optimizer.get_scaled_loss(loss)
     gradients = tape.gradient(loss, self.trainable_variables)
-    if hasattr(self.optimizer, 'get_unscaled_gradients'):
-      gradients = self.optimizer.get_unscaled_gradients(gradients)
     self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
     self.compiled_metrics.update_state(y, y_pred)
     results = {m.name: m.result() for m in self.metrics}
@@ -832,12 +802,10 @@ def train_model(
   sample_log_interval_batches: int,
   sample_log_count: int,
   sample_log_file: str,
-  mixed_precision: bool = True,
 ):
   os.makedirs(output_dir, exist_ok=True)
 
   classify_elo = elo_task == 'classifier'
-  use_mixed_precision = _set_mixed_precision(mixed_precision)
 
   print(f"Loading data from {data_dir}...")
 
@@ -911,14 +879,9 @@ def train_model(
   if hasattr(vit, 'move_projection'):
     vit.move_projection.trainable = False
 
-  optimizer = _wrap_optimizer(
-    tf.keras.optimizers.Adam(learning_rate=learning_rate),
-    use_mixed_precision,
-  )
-
   if classify_elo:
     model.compile(
-      optimizer=optimizer,
+      optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
       loss={
         'e0_class': tf.keras.losses.CategoricalCrossentropy(),
         'e1_class': tf.keras.losses.CategoricalCrossentropy(),
@@ -931,7 +894,7 @@ def train_model(
     )
   else:
     model.compile(
-      optimizer=optimizer,
+      optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
       loss={
         'w': tf.keras.losses.CategoricalCrossentropy(),
       },
@@ -1134,19 +1097,6 @@ if __name__ == "__main__":
   parser.add_argument("--sample-log-interval-batches", type=int, default=500)
   parser.add_argument("--sample-log-count", type=int, default=10)
   parser.add_argument("--sample-log-file", type=str, default="prediction_samples.jsonl")
-  parser.add_argument(
-    "--mixed-precision",
-    dest='mixed_precision',
-    action='store_true',
-    default=True,
-    help='Use mixed_float16 (default on).',
-  )
-  parser.add_argument(
-    "--no-mixed-precision",
-    dest='mixed_precision',
-    action='store_false',
-    help='Disable mixed_float16.',
-  )
 
   random.seed(42)
 
@@ -1180,6 +1130,5 @@ if __name__ == "__main__":
     sample_log_interval_batches=args.sample_log_interval_batches,
     sample_log_count=args.sample_log_count,
     sample_log_file=args.sample_log_file,
-    mixed_precision=args.mixed_precision,
   )
 # python3 -m stylometry.ViTOneHot.train_stylometry stylometry/ViTOneHot/data/run2026-03-16/ --output-dir stylometry/ViTOneHot/models/run2026-03-21 --start-checkpoint stylometry/ViTOneHot/models/run2026-03-02-lr-0.00005/checkpoint_epoch_36.keras
