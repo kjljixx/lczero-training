@@ -600,19 +600,22 @@ class GameOutcomePredictor(tf.keras.Model):
     flat_seq1 = tf.reshape(
       x['seq1'], [batch_size * NUM_GAMES_MODEL, MAX_MOVES, SEQ_PLANES, 8, 8]
     )
+    flat_mask0 = tf.reshape(x['mask0'], [batch_size * NUM_GAMES_MODEL, MAX_MOVES])
+    flat_mask1 = tf.reshape(x['mask1'], [batch_size * NUM_GAMES_MODEL, MAX_MOVES])
 
     # Explicit stop_recording is graph-safe (unlike a Python attr on vit that
     # breaks under Keras' cached tf.function traces of call()).
     with tf.GradientTape() as tape:
       with tape.stop_recording():
-        lc0_emb0 = vit.lc0_encode(flat_seq0)
-        lc0_emb1 = vit.lc0_encode(flat_seq1)
+        # Masked encode skips padded move slots through the LC0 body.
+        lc0_emb0 = vit.lc0_encode(flat_seq0, mask=flat_mask0)
+        lc0_emb1 = vit.lc0_encode(flat_seq1, mask=flat_mask1)
       y_pred = self(
         {
           'seq0': x['seq0'],
           'seq1': x['seq1'],
-          'mask0': x.get('mask0'),
-          'mask1': x.get('mask1'),
+          'mask0': x['mask0'],
+          'mask1': x['mask1'],
           'lc0_emb0': lc0_emb0,
           'lc0_emb1': lc0_emb1,
         },

@@ -132,46 +132,68 @@ class GameAggregateViT(tf.keras.Model):
             out = tf.stop_gradient(out)
             return tf.reshape(out, [-1, out_dim])
 
-        # Prefer while_loop under tf.function so graph mode does not unroll
-        # tens of thousands of positions into a giant Python list of ops.
-        if tf.executing_eagerly():
-            n = int(moves_21.shape[0]) if moves_21.shape[0] is not None else None
-            if n == 0:
-                return tf.zeros((0, out_dim), dtype=tf.float32)
-            if n is not None:
-                chunks = [
-                    _project_chunk(moves_21[start:start + chunk_size])
-                    for start in range(0, n, chunk_size)
-                ]
-                return tf.concat(chunks, axis=0) if len(chunks) > 1 else chunks[0]
+        def _empty():
+            return tf.zeros((0, out_dim), dtype=tf.float32)
 
-        def _body(start, embeddings):
-            end = tf.minimum(start + chunk_size, num_positions_t)
-            embeddings = embeddings.write(start // chunk_size, _project_chunk(moves_21[start:end]))
-            return end, embeddings
+        def _chunked():
+            # Prefer while_loop under tf.function so graph mode does not unroll
+            # tens of thousands of positions into a giant Python list of ops.
+            if tf.executing_eagerly():
+                n = int(moves_21.shape[0]) if moves_21.shape[0] is not None else None
+                if n is not None:
+                    chunks = [
+                        _project_chunk(moves_21[start:start + chunk_size])
+                        for start in range(0, n, chunk_size)
+                    ]
+                    return tf.concat(chunks, axis=0) if len(chunks) > 1 else chunks[0]
 
-        num_chunks = (num_positions_t + chunk_size - 1) // chunk_size
-        embeddings_ta = tf.TensorArray(
-            dtype=tf.float32,
-            size=num_chunks,
-            dynamic_size=False,
-            element_shape=[None, out_dim],
-        )
-        _, embeddings_ta = tf.while_loop(
-            cond=lambda start, _: start < num_positions_t,
-            body=_body,
-            loop_vars=(tf.constant(0), embeddings_ta),
-            parallel_iterations=1,
-        )
-        return embeddings_ta.concat()
+            def _body(start, embeddings):
+                end = tf.minimum(start + chunk_size, num_positions_t)
+                embeddings = embeddings.write(
+                    start // chunk_size, _project_chunk(moves_21[start:end])
+                )
+                return end, embeddings
 
-    def lc0_encode(self, move_features):
-        """Frozen LC0 encode: (batch, moves, 21, 8, 8) -> (batch, moves, lc0_dim)."""
+            num_chunks = (num_positions_t + chunk_size - 1) // chunk_size
+            embeddings_ta = tf.TensorArray(
+                dtype=tf.float32,
+                size=num_chunks,
+                dynamic_size=False,
+                element_shape=[None, out_dim],
+            )
+            _, embeddings_ta = tf.while_loop(
+                cond=lambda start, _: start < num_positions_t,
+                body=_body,
+                loop_vars=(tf.constant(0), embeddings_ta),
+                parallel_iterations=1,
+            )
+            return embeddings_ta.concat()
+
+        return tf.cond(tf.equal(num_positions_t, 0), _empty, _chunked)
+
+    def lc0_encode(self, move_features, mask=None):
+        """Frozen LC0 encode: (batch, moves, 21, 8, 8) -> (batch, moves, lc0_dim).
+
+        If mask is provided (batch, moves), only positions with mask > 0 are
+        run through the LC0 body; padded slots get zero embeddings.
+        """
         batch_size = tf.shape(move_features)[0]
         num_moves = tf.shape(move_features)[1]
         moves_reshaped = tf.reshape(move_features, [-1, 21, 8, 8])
+        out_dim = self.lc0_embedding_dim
+        flat_count = batch_size * num_moves
+
+        if mask is not None:
+            flat_mask = tf.reshape(mask, [-1]) > 0
+            valid_moves = tf.boolean_mask(moves_reshaped, flat_mask)
+            valid_embeddings = self._project_moves_lc0(valid_moves)
+            indices = tf.where(flat_mask)
+            full = tf.zeros(tf.stack([flat_count, out_dim]), dtype=tf.float32)
+            full = tf.tensor_scatter_nd_update(full, indices, valid_embeddings)
+            return tf.reshape(full, [batch_size, num_moves, out_dim])
+
         move_embeddings = self._project_moves_lc0(moves_reshaped)
-        return tf.reshape(move_embeddings, [batch_size, num_moves, self.lc0_embedding_dim])
+        return tf.reshape(move_embeddings, [batch_size, num_moves, out_dim])
 
     def from_lc0_embeddings(self, lc0_embeddings, training=None, mask=None):
         """Trainable path from LC0 embeddings: compress + pair ViT + pool."""
@@ -218,7 +240,7 @@ class GameAggregateViT(tf.keras.Model):
 
     def call(self, inputs, training=None, mask=None):
         move_features = inputs  # (batch, num_moves, 21, 8, 8)
-        lc0_embeddings = self.lc0_encode(move_features)
+        lc0_embeddings = self.lc0_encode(move_features, mask=mask)
         return self.from_lc0_embeddings(lc0_embeddings, training=training, mask=mask)
     
     def model(self):
