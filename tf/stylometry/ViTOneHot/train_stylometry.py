@@ -359,7 +359,7 @@ def create_seq_dataset(
   if repeat:
     dataset = dataset.repeat()
   if shuffle:
-    dataset = dataset.shuffle(buffer_size=1000)
+    dataset = dataset.shuffle(buffer_size=100)
   dataset = dataset.batch(batch_size)
   dataset = dataset.prefetch(10)
   return dataset
