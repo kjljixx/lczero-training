@@ -425,14 +425,22 @@ class EloPredictor(tf.keras.Model):
 
   def call(self, inputs, training=None, mask=None):
     if isinstance(inputs, dict):
-      seq = inputs['seq']           # (batch, MAX_MOVES, SEQ_PLANES, 8, 8)
       m = inputs.get('mask', None)  # (batch, MAX_MOVES)
+      lc0_embeddings = inputs.get('move_embeddings', None)
+      seq = inputs.get('seq', None)
     else:
       seq = inputs
       m = None
+      lc0_embeddings = None
 
     is_training = _training_flag(training)
-    embedding = self.vit(seq, training=is_training, mask=m)  # (batch, hidden_dim)
+    if lc0_embeddings is not None:
+      # LC0 already encoded outside GradientTape.stop_recording().
+      embedding = self.vit.from_lc0_embeddings(
+        lc0_embeddings, training=is_training, mask=m
+      )
+    else:
+      embedding = self.vit(seq, training=is_training, mask=m)  # (batch, hidden_dim)
     if self.classify_elo:
       return self.classification_head(embedding, training=is_training)
     elo = self.regression_head(embedding, training=is_training) * ELO_SCALE  # (batch, 1)
@@ -464,6 +472,8 @@ class GameOutcomePredictor(tf.keras.Model):
     seq1 = inputs['seq1']
     mask0 = inputs.get('mask0', None)
     mask1 = inputs.get('mask1', None)
+    lc0_emb0 = inputs.get('lc0_emb0', None)
+    lc0_emb1 = inputs.get('lc0_emb1', None)
 
     is_training = _training_flag(training)
 
@@ -479,8 +489,19 @@ class GameOutcomePredictor(tf.keras.Model):
     if mask1 is not None:
       flat_mask1 = tf.reshape(mask1, [batch_size * NUM_GAMES_MODEL, MAX_MOVES])
 
-    game_elo0 = self.elo_predictor({'seq': flat_seq0, 'mask': flat_mask0}, training=is_training)
-    game_elo1 = self.elo_predictor({'seq': flat_seq1, 'mask': flat_mask1}, training=is_training)
+    if lc0_emb0 is not None:
+      game_elo0 = self.elo_predictor(
+        {'move_embeddings': lc0_emb0, 'mask': flat_mask0}, training=is_training
+      )
+    else:
+      game_elo0 = self.elo_predictor({'seq': flat_seq0, 'mask': flat_mask0}, training=is_training)
+    if lc0_emb1 is not None:
+      game_elo1 = self.elo_predictor(
+        {'move_embeddings': lc0_emb1, 'mask': flat_mask1}, training=is_training
+      )
+    else:
+      game_elo1 = self.elo_predictor({'seq': flat_seq1, 'mask': flat_mask1}, training=is_training)
+
     game_probs0 = None
     game_probs1 = None
     game_valid0 = None
@@ -572,13 +593,32 @@ class GameOutcomePredictor(tf.keras.Model):
   def train_step(self, data):
     x, y = data
     vit = self.elo_predictor.vit
+    batch_size = tf.shape(x['seq0'])[0]
+    flat_seq0 = tf.reshape(
+      x['seq0'], [batch_size * NUM_GAMES_MODEL, MAX_MOVES, SEQ_PLANES, 8, 8]
+    )
+    flat_seq1 = tf.reshape(
+      x['seq1'], [batch_size * NUM_GAMES_MODEL, MAX_MOVES, SEQ_PLANES, 8, 8]
+    )
+
+    # Explicit stop_recording is graph-safe (unlike a Python attr on vit that
+    # breaks under Keras' cached tf.function traces of call()).
     with tf.GradientTape() as tape:
-      vit._stop_recording_ctx = tape.stop_recording
-      try:
-        y_pred = self(x, training=True)
-        loss = self.compiled_loss(y, y_pred, regularization_losses=self.losses)
-      finally:
-        vit._stop_recording_ctx = None
+      with tape.stop_recording():
+        lc0_emb0 = vit.lc0_encode(flat_seq0)
+        lc0_emb1 = vit.lc0_encode(flat_seq1)
+      y_pred = self(
+        {
+          'seq0': x['seq0'],
+          'seq1': x['seq1'],
+          'mask0': x.get('mask0'),
+          'mask1': x.get('mask1'),
+          'lc0_emb0': lc0_emb0,
+          'lc0_emb1': lc0_emb1,
+        },
+        training=True,
+      )
+      loss = self.compiled_loss(y, y_pred, regularization_losses=self.losses)
     gradients = tape.gradient(loss, self.trainable_variables)
     self.optimizer.apply_gradients(zip(gradients, self.trainable_variables))
     self.compiled_metrics.update_state(y, y_pred)
@@ -847,7 +887,7 @@ def train_model(
         'e0_class': [tf.keras.metrics.CategoricalAccuracy(name='a')],
         'e1_class': [tf.keras.metrics.CategoricalAccuracy(name='a')],
       },
-      run_eagerly=True
+      run_eagerly=False,
     )
   else:
     model.compile(
@@ -861,7 +901,7 @@ def train_model(
         # 'e1': [tf.keras.metrics.MeanAbsoluteError(name='e'), tf.keras.metrics.MeanSquaredError(name='m')],
         'e_d': [StrengthDiffError(), StrengthDiffAbsError()],
       },
-      run_eagerly=True
+      run_eagerly=False,
     )
 
   model.build(input_shape={  # type: ignore

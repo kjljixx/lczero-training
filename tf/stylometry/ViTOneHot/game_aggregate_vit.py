@@ -59,11 +59,13 @@ class GameAggregateViT(tf.keras.Model):
             flow, _ = tfp.create_encoder_body(input_var, embedding_size)
             flow = tf.keras.layers.GlobalAveragePooling1D()(flow)
             self.move_projection = tf.keras.Model(inputs=input_var, outputs=flow)
+            self.lc0_embedding_dim = int(embedding_size)
             if flow.shape[-1] != self.hidden_dim:
               self.move_compress = layers.Dense(units=self.hidden_dim, activation='relu')
         else:
             filters = cfg['model']['filters']
             self.move_projection = tfp.model
+            self.lc0_embedding_dim = filters * 8 * 8
             if filters * 8 * 8 != self.hidden_dim:
               print("Stylo ViT Using compression layer")
               self.move_compress = tf.keras.Sequential([
@@ -73,16 +75,11 @@ class GameAggregateViT(tf.keras.Model):
 
         self.move_projection.trainable = False
         print("Frozen LC0 move_projection body (stylometry trains ViT + heads only)")
-        # Set by GameOutcomePredictor.train_step to tape.stop_recording so body
-        # forwards are not recorded on GradientTape (avoids activation OOM).
-        self._stop_recording_ctx = None
 
         self.pair_projection = layers.Dense(units=hidden_dim, activation='relu')
 
         # BiasAdd GPU kernels multiply N*H*W*C as int32 (limit ~43k positions at
         # emb=768). The 15-layer encoder is the tighter bound: LC0 trains this net
-        # at microbatch 512 (batch 2048 / 4 splits). Larger chunks OOM and cuDNN
-        # fails with "No DNN support for stream" on fused LayerNorm/FusedBatchNorm.
         self.move_proj_chunk_size = 512
 
         #sin position encoding like paper recommended
@@ -104,9 +101,13 @@ class GameAggregateViT(tf.keras.Model):
             input_specs=input_specs,
             patch_size=1,  # Since we already have embeddings, no patching needed
         )
-    
-    def _project_moves(self, moves_21, training):
-        """Pad to 112 planes and run move_projection in chunks.
+
+    def _project_moves_lc0(self, moves_21):
+        """Pad to 112 planes and run frozen LC0 body in chunks.
+
+        Returns stop-gradient embeddings of shape (N, lc0_embedding_dim).
+        Callers that need grads through move_compress must apply it outside
+        GradientTape.stop_recording().
 
         Two limits force chunking:
         1) BiasAdd GPU kernels multiply N*H*W*C as int32 (overflow at ~43k
@@ -114,9 +115,10 @@ class GameAggregateViT(tf.keras.Model):
         2) Encoder activations (15 layers, 24-head smolgen) OOM well before that;
            keep chunks near LC0's microbatch (512).
         """
-        num_positions = moves_21.shape[0]
         chunk_size = self.move_proj_chunk_size
         d_type = moves_21.dtype
+        num_positions_t = tf.shape(moves_21)[0]
+        out_dim = self.lc0_embedding_dim
 
         def _project_chunk(chunk_21):
             n = tf.shape(chunk_21)[0]
@@ -125,37 +127,23 @@ class GameAggregateViT(tf.keras.Model):
                 tf.zeros((n, 91, 8, 8), dtype=d_type),
                 chunk_21[:, -8:],
             ], axis=1)
-
-            def _run_body():
-              # Inference-only on frozen LC0 body (no BN updates).
-              return self.move_projection(padded, training=False)
-
-            # When a GradientTape is active, pause recording so encoder
-            # activations are not retained for backprop (trainable=False and
-            # stop_gradient alone still OOM — body ops are recorded first).
-            if self._stop_recording_ctx is not None:
-              with self._stop_recording_ctx():
-                out = _run_body()
-            else:
-              out = _run_body()
+            # Inference-only on frozen LC0 body (no BN updates).
+            out = self.move_projection(padded, training=False)
             out = tf.stop_gradient(out)
-            if self.move_compress is not None:
-              out = self.move_compress(out, training=training)
-            return tf.reshape(out, [-1, self.hidden_dim])
+            return tf.reshape(out, [-1, out_dim])
 
-        # Eager path (train_stylometry uses run_eagerly=True).
-        if num_positions is not None:
-            n = int(num_positions)
+        # Prefer while_loop under tf.function so graph mode does not unroll
+        # tens of thousands of positions into a giant Python list of ops.
+        if tf.executing_eagerly():
+            n = int(moves_21.shape[0]) if moves_21.shape[0] is not None else None
             if n == 0:
-                return tf.zeros((0, self.hidden_dim), dtype=tf.float32)
-            chunks = [
-                _project_chunk(moves_21[start:start + chunk_size])
-                for start in range(0, n, chunk_size)
-            ]
-            return tf.concat(chunks, axis=0) if len(chunks) > 1 else chunks[0]
-
-        # Graph path.
-        num_positions_t = tf.shape(moves_21)[0]
+                return tf.zeros((0, out_dim), dtype=tf.float32)
+            if n is not None:
+                chunks = [
+                    _project_chunk(moves_21[start:start + chunk_size])
+                    for start in range(0, n, chunk_size)
+                ]
+                return tf.concat(chunks, axis=0) if len(chunks) > 1 else chunks[0]
 
         def _body(start, embeddings):
             end = tf.minimum(start + chunk_size, num_positions_t)
@@ -167,7 +155,7 @@ class GameAggregateViT(tf.keras.Model):
             dtype=tf.float32,
             size=num_chunks,
             dynamic_size=False,
-            element_shape=[None, self.hidden_dim],
+            element_shape=[None, out_dim],
         )
         _, embeddings_ta = tf.while_loop(
             cond=lambda start, _: start < num_positions_t,
@@ -177,15 +165,23 @@ class GameAggregateViT(tf.keras.Model):
         )
         return embeddings_ta.concat()
 
-    def call(self, inputs, training=None, mask=None):
-        move_features = inputs  # (batch, num_moves, 21, 8, 8)
+    def lc0_encode(self, move_features):
+        """Frozen LC0 encode: (batch, moves, 21, 8, 8) -> (batch, moves, lc0_dim)."""
         batch_size = tf.shape(move_features)[0]
         num_moves = tf.shape(move_features)[1]
+        moves_reshaped = tf.reshape(move_features, [-1, 21, 8, 8])
+        move_embeddings = self._project_moves_lc0(moves_reshaped)
+        return tf.reshape(move_embeddings, [batch_size, num_moves, self.lc0_embedding_dim])
 
-        moves_reshaped = tf.reshape(move_features, [-1, 21, 8, 8])  # (batch*num_moves, 21, 8, 8)
-        move_embeddings = self._project_moves(moves_reshaped, training=training)
-        x = tf.reshape(move_embeddings, [batch_size, num_moves, self.hidden_dim])
+    def from_lc0_embeddings(self, lc0_embeddings, training=None, mask=None):
+        """Trainable path from LC0 embeddings: compress + pair ViT + pool."""
+        x = lc0_embeddings
+        if self.move_compress is not None:
+            x = self.move_compress(x, training=training)
+        return self._aggregate_from_move_embeddings(x, training=training, mask=mask)
 
+    def _aggregate_from_move_embeddings(self, x, training=None, mask=None):
+        """x: (batch, num_moves, hidden_dim) -> (batch, hidden_dim)."""
         x_even = x[:, 0::2, :]
         x_odd = x[:, 1::2, :]
         pair_count = tf.minimum(tf.shape(x_even)[1], tf.shape(x_odd)[1])
@@ -219,6 +215,11 @@ class GameAggregateViT(tf.keras.Model):
         else:
             aggregated = tf.reduce_mean(x, axis=1)
         return aggregated
+
+    def call(self, inputs, training=None, mask=None):
+        move_features = inputs  # (batch, num_moves, 21, 8, 8)
+        lc0_embeddings = self.lc0_encode(move_features)
+        return self.from_lc0_embeddings(lc0_embeddings, training=training, mask=mask)
     
     def model(self):
         x = tf.keras.Input(shape=(self.max_moves, self.move_feature_dim))
