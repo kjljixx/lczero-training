@@ -1,0 +1,126 @@
+%YAML 1.2
+--- 
+
+name: 't1-256x10-distilled-swa' #step 2432500
+gpu: all
+dataset:
+  num_chunks: 300_000_000
+  allow_less_chunks: true
+  train_ratio: 0.90
+  sort_type: name
+  input_train:  
+        - '/home/admin/t80data/*/'      
+        - '/mnt/data/t80data/*/'
+        - '/mnt/data/t80data2/*/'
+        - '/mnt/data/t80data3/*/'
+  input_test:
+        - '/home/admin/lczero-training/testdata/*/'
+        #- '/mnt/data/lc0_sf-rescored/*/'
+  input_validation:
+        - '/mnt/data/validation-rescored/'
+  train_workers: 47
+  test_workers: 4
+training:
+    precision: single
+    swa: true
+    swa_output: true
+    swa_max_n: 10
+    swa_steps: 25
+    max_grad_norm: 10.0
+    batch_size: 2048 
+    num_batch_splits: 1
+    q_ratio: 0
+    diff_focus_min: 0.025 #1.0
+    diff_focus_slope: 3.0 #0.0
+    optimizer: 'Nadam'
+    weight_decay: 0.0 
+    beta_1: 0.9
+    beta_2: 0.98
+    epsilon: 0.00000001
+    lookahead_optimizer: false
+    renorm: true
+    renorm_max_r: 1.0 
+    renorm_max_d: 0.0 
+    test_steps: 250_000 
+    validation_steps: 2500 
+    num_test_positions: 131_072
+    train_avg_report_steps: 500
+    total_steps: 100_000_000
+    checkpoint_steps: 2500 
+    shuffle_size: 1_000_000
+    warmup_steps: 1000
+    mask_legal_moves: true
+    lr_values:
+        - 0.00025  #0.0005 #0.00025 #0.000125 #0.00005 #0.000005
+        - 0.00025
+    lr_boundaries:
+        - 500_000
+    policy_loss_weight: 1.0
+    value_loss_weight: 1.0
+    reg_term_weight: 1.0 #revert to 1610000
+    moves_left_loss_weight: 1.0
+    path: '/mnt/data/nets'
+model:
+    default_activation: 'mish'          
+    embedding_size: 512
+    policy_embedding_size: 512
+    value_embedding_size: 32
+    moves_left_embedding_size: 8
+    encoder_layers: 10                   # number of intermediate attention layers in the policy head
+    encoder_heads: 8                     # number of attention heads in encoder layers, emb // (32 or 64) recommended
+                                         # with 64 memory is same as embedding, with 32 is double
+    encoder_d_model: 512                 # size of the Q, K, & V vectors in encoder layers -- divisible by encoder_heads
+    encoder_dff: 1024                    # size of the expansion layer in encoder layer ffn
+    square_relu_ffn: true # ALWAYS SUGGESTED
+    policy_d_model: 512                  # size of the query and key vectors in final attention layer
+    dropout_rate: 0.0                   # the dropout rate used for weight regularization of attention during training
+                                        # makes memory 33 -> 39 GB on A100 as observed by Teck and Kovax
+
+    value: 'wdl'
+    policy: 'attention'
+    moves_left: 'v1'
+    input_type: 'classic'
+
+    # apparently adds nothing with fullgen, but tests needed
+    arc_encoding: true
+    
+    # smolgen: more efficient version of fullgen, adds a lot of params
+    use_smolgen: true
+    smolgen_hidden_channels: 32
+    smolgen_hidden_sz: 512
+    smolgen_gen_sz: 512
+    smolgen_activation: 'swish'
+    
+distill:
+  use_distill: true
+  teacher_name: 't1-smolgen-768x13x12hx512gz' 
+  distill_alpha: 0.2
+  distill_temp: 4
+  model:
+    embedding_size: 768
+    policy_embedding_size: 768
+    value_embedding_size: 128
+    moves_left_embedding_size: 32
+    encoder_layers: 13                   # number of intermediate attention layers in the policy head
+    encoder_heads: 12                     # number of attention heads in encoder layers, emb // (32 or 64) recommended
+                                         # with 64 memory is same as embedding, with 32 is double
+    encoder_d_model: 768                 # size of the Q, K, & V vectors in encoder layers -- divisible by encoder_heads
+    encoder_dff: 1536                    # size of the expansion layer in encoder layer ffn
+    square_relu_ffn: true # ALWAYS SUGGESTED
+    policy_d_model: 768                  # size of the query and key vectors in final attention layer
+    dropout_rate: 0.0                   # the dropout rate used for weight regularization of attention during training
+    
+    policy: 'attention'                                    # makes memory 33 -> 39 GB on A100 as observed by Teck and Kovax
+    value: 'wdl'
+    moves_left: 'v1'
+    input_type: 'classic'
+    
+    # apparently adds nothing with fullgen, but tests needed
+    arc_encoding: true
+    
+    # smolgen: more efficient version of fullgen, adds a lot of params
+    use_smolgen: true
+    smolgen_hidden_channels: 64
+    smolgen_hidden_sz: 1024
+    smolgen_gen_sz: 1024
+    smolgen_activation: 'swish'
