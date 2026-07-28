@@ -879,7 +879,7 @@ def train_model(
   if hasattr(vit, 'move_projection'):
     vit.move_projection.trainable = False
 
-  if classify_elo:
+  if elo_task == 'classifier':
     model.compile(
       optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
       loss={
@@ -892,7 +892,21 @@ def train_model(
       },
       run_eagerly=False,
     )
-  else:
+  elif elo_task == 'regression':
+    model.compile(
+      optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
+      loss={
+        'e0': tf.keras.losses.MeanSquaredError(),
+        'e1': tf.keras.losses.MeanSquaredError(),
+      },
+      metrics={
+        'e0': [tf.keras.metrics.MeanAbsoluteError(name='e'), tf.keras.metrics.MeanSquaredError(name='m')],
+        'e1': [tf.keras.metrics.MeanAbsoluteError(name='e'), tf.keras.metrics.MeanSquaredError(name='m')],
+        'e_d': [StrengthDiffError(), StrengthDiffAbsError()],
+      },
+      run_eagerly=False,
+    )
+  elif elo_task == 'outcome':
     model.compile(
       optimizer=tf.keras.optimizers.Adam(learning_rate=learning_rate),
       loss={
@@ -900,8 +914,6 @@ def train_model(
       },
       metrics={
         'w': [tf.keras.metrics.CategoricalAccuracy(name='a'), tf.keras.metrics.MeanSquaredError(name='m'), tf.keras.metrics.MeanAbsoluteError(name='e')],
-        # 'e0': [tf.keras.metrics.MeanAbsoluteError(name='e'), tf.keras.metrics.MeanSquaredError(name='m')],
-        # 'e1': [tf.keras.metrics.MeanAbsoluteError(name='e'), tf.keras.metrics.MeanSquaredError(name='m')],
         'e_d': [StrengthDiffError(), StrengthDiffAbsError()],
       },
       run_eagerly=False,
@@ -1084,9 +1096,9 @@ if __name__ == "__main__":
   parser.add_argument("--val-split", type=float, default=0.003)
   parser.add_argument(
     "--elo-task",
-    choices=['regression', 'classifier'],
+    choices=['regression', 'classifier', 'outcome'],
     default='regression',
-    help='Predict scalar Elo values or 8-bin class labels.',
+    help='Predict scalar Elo values directly, class labels, or game outcomes.',
   )
   parser.add_argument("--hidden-dim", type=int, default=512)
   parser.add_argument("--num-layers", type=int, default=8)
