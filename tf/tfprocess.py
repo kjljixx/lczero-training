@@ -1264,7 +1264,9 @@ class TFProcess:
 
         # 0 h 64 d, 0 h d 64
         matmul_qk = tf.matmul(q, k, transpose_b=True)
-        dk = tf.cast(tf.shape(k)[-1], self.model_dtype)
+        # Follow activation dtype (e.g. bfloat16 under mixed_bfloat16), not
+        # model_dtype, so scale matches matmul_qk under AMP.
+        dk = tf.cast(tf.shape(k)[-1], matmul_qk.dtype)
         scaled_attention_logits = matmul_qk / tf.math.sqrt(dk)
         heads = scaled_attention_logits.shape[1]
 
@@ -1342,16 +1344,16 @@ class TFProcess:
                       num_heads: int, dff: int, name: str):
         initializer = None
         if self.encoder_layers > 0:
-            # DeepNorm
+            # DeepNorm — alpha must match activation dtype (bf16 under AMP).
             alpha = tf.cast(tf.math.pow(2. * self.encoder_layers, 0.25),
-                            self.model_dtype)
+                            inputs.dtype)
             beta = tf.cast(tf.math.pow(8. * self.encoder_layers, -0.25),
                            self.model_dtype)
             xavier_norm = tf_keras.initializers.VarianceScaling(
                 scale=beta, mode='fan_avg', distribution='truncated_normal')
             initializer = xavier_norm
         else:
-            alpha = 1
+            alpha = tf.cast(1.0, inputs.dtype)
             initializer = "glorot_normal"
         # multihead attention
         attn_output, attn_wts = MHALayer(
@@ -1373,8 +1375,10 @@ class TFProcess:
         ffn_output = tf_keras.layers.Dropout(self.dropout_rate,
                                              name=name +
                                              "/dropout2")(ffn_output)
+        # Re-cast in case residual path dtype drifted relative to alpha.
+        alpha_out = tf.cast(alpha, out1.dtype)
         out2 = tf_keras.layers.LayerNormalization(
-            epsilon=1e-6, name=name + "/ln2")(out1 * alpha + ffn_output)
+            epsilon=1e-6, name=name + "/ln2")(out1 * alpha_out + ffn_output)
         return out2, attn_wts
 
     def smolgen_weights(self,

@@ -4,3 +4,7 @@ tf_keras==2.19.0
 tensorboard==2.19.0
 protobuf==5.29.5
 chess
+
+gin-config
+pycocotools
+opencv-python
