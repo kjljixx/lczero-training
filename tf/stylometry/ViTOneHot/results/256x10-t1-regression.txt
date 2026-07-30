@@ -1,0 +1,28 @@
+epoch 5, 20 context games
+Epoch 5/500
+5000/5000 [==============================] - ETA: 0s - loss: 69739.3594 - e0_loss: 34799.9805 - e1_loss: 34939.4102 - e0_e: 147.4687 - e0_m: 34799.9805 - e1_e: 147.4620 - e1_m: 34939.4102 - e_d_e: -76.2450 - e_d_a: 162.6480
+Epoch 5: saving model to stylometry/ViTOneHot/models/run2026-07-27-regression/checkpoint_epoch_05.keras
+5000/5000 [==============================] - 22293s 4s/step - loss: 69739.3594 - e0_loss: 34799.9805 - e1_loss: 34939.4102 - e0_e: 147.4687 - e0_m: 34799.9805 - e1_e: 147.4620 - e1_m: 34939.4102 - e_d_e: -76.2450 - e_d_a: 162.6480 - val_loss: 79943.4219 - val_e0_loss: 43225.0078 - val_e1_loss: 36718.4180 - val_e0_e: 163.6689 - val_e0_m: 41658.9727 - val_e1_e: 148.3568 - val_e1_m: 34640.1133 - val_e_d_e: -74.3344 - val_e_d_a: 162.3923 - learning_rate: 1.0000e-04
+(note: val sample size is kinda small because i made a bit of a mistake)
+
+Processed 600 batches (9600 player-samples). scale=1.000000 shift=96.651 overall_bin_acc=0.3977 macro_f1=0.2969 weighted_f1=0.3884 actual_pair_mean_abs_diff=193.600 actual_pair_abs_diff_q25=86.000 actual_pair_abs_diff_q50=161.000 actual_pair_abs_diff_q75=263.250 raw_mae=163.756 raw_mse=44396.906 norm_mae=147.290 norm_mse=35055.542
+Running per-bin accuracy (actual bin denominator):
+bin        count  accuracy  f1_score
+1000-1199    266    0.2105    0.3164
+1200-1399    741    0.3563    0.4184
+1400-1599   1575    0.3917    0.3836
+1600-1799   2828    0.4498    0.4302
+1800-1999   2570    0.4942    0.4401
+2000-2199   1196    0.2659    0.2903
+2200-2399    371    0.0566    0.0961
+2400-2599     53    0.0000    0.0000
+Running confusion matrix (rows=actual, cols=predicted):
+actual\pred  1000-1199  1200-1399  1400-1599  1600-1799  1800-1999  2000-2199  2200-2399  2400-2599
+1000-1199           56        130         78          2          0          0          0          0
+1200-1399           26        264        326         98         27          0          0          0
+1400-1599            3         98        617        717        137          3          0          0
+1600-1799            3         29        449       1272        907        168          0          0
+1800-1999            0          0        146        778       1270        372          4          0
+2000-2199            0          0         25        198        620        318         35          0
+2200-2399            0          0          1         17        228        104         21          0
+2400-2599            0          0          0          4         13         30          6          0
