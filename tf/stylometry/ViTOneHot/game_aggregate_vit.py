@@ -91,10 +91,9 @@ class GameAggregateViT(tf.keras.Model):
 
         # BiasAdd GPU kernels multiply N*H*W*C as int32. For emb=256 that
         # allows N < ~131k; for emb=768 the limit is ~43k. Encoder activation
-        # memory is the practical bound — 1024 stays near LC0's microbatch
-        # (512) while cutting while_loop / launch overhead. Fixed size keeps
-        # XLA from retracing on every masked remainder length.
-        self.move_proj_chunk_size = 1024
+        # memory is the practical bound — keep chunks at LC0's microbatch (512).
+        # (Larger chunks + XLA previously OOM'd alongside the trainable ViT.)
+        self.move_proj_chunk_size = 512
         self._project_chunk = None  # built below / lazily for checkpoint loads
         self._get_project_chunk()
 
@@ -140,34 +139,34 @@ class GameAggregateViT(tf.keras.Model):
         _apply(self.move_projection)
 
     def _get_project_chunk(self):
-        """XLA kernel for one fixed-size LC0 chunk; created once per instance."""
+        """bf16 LC0 chunk forward; created once per instance."""
         if getattr(self, '_project_chunk', None) is None:
-            chunk_size = int(getattr(self, 'move_proj_chunk_size', 1024))
+            chunk_size = int(getattr(self, 'move_proj_chunk_size', 512))
             self.move_proj_chunk_size = chunk_size
             self._ensure_lc0_bf16_policy()
-            self._project_chunk = self._make_project_chunk_fn(chunk_size)
+            self._project_chunk = self._make_project_chunk_fn()
         return self._project_chunk
 
-    def _make_project_chunk_fn(self, chunk_size):
-        """Build an XLA-compiled LC0 forward that always sees `chunk_size` rows."""
+    def _make_project_chunk_fn(self):
+        """bf16 frozen LC0 forward for one variable-sized chunk (no XLA — saves VRAM)."""
         move_projection = self.move_projection
         out_dim = self.lc0_embedding_dim
 
-        @tf.function(
-            jit_compile=True,
-            input_signature=[tf.TensorSpec(shape=[chunk_size, 21, 8, 8], dtype=tf.float32)],
-        )
+        @tf.function(input_signature=[
+            tf.TensorSpec(shape=[None, 21, 8, 8], dtype=tf.float32),
+        ])
         def _project_chunk(chunk_21):
+            n = tf.shape(chunk_21)[0]
             chunk_bf16 = tf.cast(chunk_21, tf.bfloat16)
             padded = tf.concat([
                 chunk_bf16[:, :13],
-                tf.zeros((chunk_size, 91, 8, 8), dtype=tf.bfloat16),
+                tf.zeros((n, 91, 8, 8), dtype=tf.bfloat16),
                 chunk_bf16[:, -8:],
             ], axis=1)
             out = move_projection(padded, training=False)
             out = tf.cast(out, tf.float32)
             out = tf.stop_gradient(out)
-            return tf.reshape(out, [chunk_size, out_dim])
+            return tf.reshape(out, [-1, out_dim])
 
         return _project_chunk
 
@@ -181,19 +180,13 @@ class GameAggregateViT(tf.keras.Model):
         Chunking bounds:
         1) BiasAdd GPU kernels multiply N*H*W*C as int32 (overflow at ~131k
            positions for emb=256, ~43k for emb=768).
-        2) Encoder activation memory; 1024 is a safe tradeoff for 256x10.
+        2) Encoder activation memory; keep near LC0 microbatch (512).
         """
-        chunk_size = int(getattr(self, 'move_proj_chunk_size', 1024))
+        chunk_size = int(getattr(self, 'move_proj_chunk_size', 512))
         project_chunk = self._get_project_chunk()
         chunk_size = self.move_proj_chunk_size
         num_positions_t = tf.shape(moves_21)[0]
         out_dim = self.lc0_embedding_dim
-
-        def _run_chunk(chunk):
-            n = tf.shape(chunk)[0]
-            # Pad to fixed chunk_size so the XLA binary stays monomorphic.
-            chunk = tf.pad(chunk, [[0, chunk_size - n], [0, 0], [0, 0], [0, 0]])
-            return project_chunk(chunk)[:n]
 
         def _empty():
             return tf.zeros((0, out_dim), dtype=tf.float32)
@@ -205,7 +198,7 @@ class GameAggregateViT(tf.keras.Model):
                 n = int(moves_21.shape[0]) if moves_21.shape[0] is not None else None
                 if n is not None:
                     chunks = [
-                        _run_chunk(moves_21[start:start + chunk_size])
+                        project_chunk(moves_21[start:start + chunk_size])
                         for start in range(0, n, chunk_size)
                     ]
                     return tf.concat(chunks, axis=0) if len(chunks) > 1 else chunks[0]
@@ -213,7 +206,7 @@ class GameAggregateViT(tf.keras.Model):
             def _body(start, embeddings):
                 end = tf.minimum(start + chunk_size, num_positions_t)
                 embeddings = embeddings.write(
-                    start // chunk_size, _run_chunk(moves_21[start:end])
+                    start // chunk_size, project_chunk(moves_21[start:end])
                 )
                 return end, embeddings
 
