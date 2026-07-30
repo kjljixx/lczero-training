@@ -43,44 +43,60 @@ class GameAggregateViT(tf.keras.Model):
 
         with open(CONFIG_FILE_PATH, 'r') as file:
             cfg = yaml.safe_load(file)
-        
-        tfp = TFProcess(cfg)
-        tfp.init_net(use_heads=False)
-        tfp.restore()
-        
-        # ONLY extract body, not heads. Freeze LC0 weights so stylometry
-        # training only updates pair_projection / ViT / elo heads (avoids
-        # GradientTape OOM from 15-layer encoder activations).
-        input_var = tf.keras.Input(shape=(112, 8, 8))
-        assert isinstance(cfg, dict)
-        self.move_compress = None
-        if cfg['model'].get('encoder_layers', 0) > 0:
-            embedding_size = cfg['model'].get('embedding_size', cfg['model'].get('filters'))
-            flow, _ = tfp.create_encoder_body(input_var, embedding_size)
-            flow = tf.keras.layers.GlobalAveragePooling1D()(flow)
-            self.move_projection = tf.keras.Model(inputs=input_var, outputs=flow)
-            self.lc0_embedding_dim = int(embedding_size)
-            if flow.shape[-1] != self.hidden_dim:
-              self.move_compress = layers.Dense(units=self.hidden_dim, activation='relu')
-        else:
-            filters = cfg['model']['filters']
-            self.move_projection = tfp.model
-            self.lc0_embedding_dim = filters * 8 * 8
-            if filters * 8 * 8 != self.hidden_dim:
-              print("Stylo ViT Using compression layer")
-              self.move_compress = tf.keras.Sequential([
-                  layers.Flatten(),
-                  layers.Dense(units=self.hidden_dim, activation='relu'),
-              ])
+
+        # Build the frozen LC0 body under mixed_bfloat16 so matmuls run in bf16
+        # (weights stay fp32 for checkpoint restore). Trainable ViT/heads below
+        # stay on the default float32 policy.
+        _prev_policy = tf.keras.mixed_precision.global_policy()
+        tf.keras.mixed_precision.set_global_policy('mixed_bfloat16')
+        try:
+            tfp = TFProcess(cfg)
+            tfp.init_net(use_heads=False)
+            tfp.restore()
+
+            # ONLY extract body, not heads. Freeze LC0 weights so stylometry
+            # training only updates pair_projection / ViT / elo heads (avoids
+            # GradientTape OOM from encoder activations).
+            input_var = tf.keras.Input(shape=(112, 8, 8))
+            assert isinstance(cfg, dict)
+            self.move_compress = None
+            if cfg['model'].get('encoder_layers', 0) > 0:
+                embedding_size = cfg['model'].get('embedding_size', cfg['model'].get('filters'))
+                flow, _ = tfp.create_encoder_body(input_var, embedding_size)
+                flow = tf.keras.layers.GlobalAveragePooling1D()(flow)
+                self.move_projection = tf.keras.Model(inputs=input_var, outputs=flow)
+                self.lc0_embedding_dim = int(embedding_size)
+            else:
+                filters = cfg['model']['filters']
+                self.move_projection = tfp.model
+                self.lc0_embedding_dim = filters * 8 * 8
+        finally:
+            tf.keras.mixed_precision.set_global_policy(_prev_policy)
+
+        if self.move_compress is None and self.lc0_embedding_dim != self.hidden_dim:
+            if cfg['model'].get('encoder_layers', 0) > 0:
+                self.move_compress = layers.Dense(units=self.hidden_dim, activation='relu')
+            else:
+                print("Stylo ViT Using compression layer")
+                self.move_compress = tf.keras.Sequential([
+                    layers.Flatten(),
+                    layers.Dense(units=self.hidden_dim, activation='relu'),
+                ])
 
         self.move_projection.trainable = False
-        print("Frozen LC0 move_projection body (stylometry trains ViT + heads only)")
+        print("Frozen LC0 move_projection body (bf16 compute; stylometry trains ViT + heads only)")
+        self._ensure_lc0_bf16_policy()
 
         self.pair_projection = layers.Dense(units=hidden_dim, activation='relu')
 
-        # BiasAdd GPU kernels multiply N*H*W*C as int32 (limit ~43k positions at
-        # emb=768). The 15-layer encoder is the tighter bound: LC0 trains this net
-        self.move_proj_chunk_size = 512
+        # BiasAdd GPU kernels multiply N*H*W*C as int32. For emb=256 that
+        # allows N < ~131k; for emb=768 the limit is ~43k. Encoder activation
+        # memory is the practical bound — 4096 is safe for 256x10 and cuts
+        # while_loop / launch overhead vs LC0's train microbatch of 512.
+        # Fixed size keeps XLA from retracing on every masked remainder length.
+        self.move_proj_chunk_size = 4096
+        self._project_chunk = None  # built below / lazily for checkpoint loads
+        self._get_project_chunk()
 
         #sin position encoding like paper recommended
         self.positional_encoding = get_sinusoidal_positional_encoding(
@@ -102,6 +118,48 @@ class GameAggregateViT(tf.keras.Model):
             patch_size=1,  # Since we already have embeddings, no patching needed
         )
 
+    def _ensure_lc0_bf16_policy(self):
+        """Force mixed_bfloat16 compute on the frozen LC0 body (weights stay fp32)."""
+        policy = tf.keras.mixed_precision.Policy('mixed_bfloat16')
+        self.move_projection.dtype_policy = policy
+        for layer in self.move_projection.layers:
+            layer.dtype_policy = policy
+
+    def _get_project_chunk(self):
+        """XLA kernel for one fixed-size LC0 chunk; created once per instance."""
+        if getattr(self, '_project_chunk', None) is None:
+            chunk_size = int(getattr(self, 'move_proj_chunk_size', 4096))
+            # Upgrade older checkpoints that still carry chunk_size=512.
+            if chunk_size < 4096:
+                chunk_size = 4096
+                self.move_proj_chunk_size = chunk_size
+            self._ensure_lc0_bf16_policy()
+            self._project_chunk = self._make_project_chunk_fn(chunk_size)
+        return self._project_chunk
+
+    def _make_project_chunk_fn(self, chunk_size):
+        """Build an XLA-compiled LC0 forward that always sees `chunk_size` rows."""
+        move_projection = self.move_projection
+        out_dim = self.lc0_embedding_dim
+
+        @tf.function(
+            jit_compile=True,
+            input_signature=[tf.TensorSpec(shape=[chunk_size, 21, 8, 8], dtype=tf.float32)],
+        )
+        def _project_chunk(chunk_21):
+            chunk_bf16 = tf.cast(chunk_21, tf.bfloat16)
+            padded = tf.concat([
+                chunk_bf16[:, :13],
+                tf.zeros((chunk_size, 91, 8, 8), dtype=tf.bfloat16),
+                chunk_bf16[:, -8:],
+            ], axis=1)
+            out = move_projection(padded, training=False)
+            out = tf.cast(out, tf.float32)
+            out = tf.stop_gradient(out)
+            return tf.reshape(out, [chunk_size, out_dim])
+
+        return _project_chunk
+
     def _project_moves_lc0(self, moves_21):
         """Pad to 112 planes and run frozen LC0 body in chunks.
 
@@ -109,28 +167,24 @@ class GameAggregateViT(tf.keras.Model):
         Callers that need grads through move_compress must apply it outside
         GradientTape.stop_recording().
 
-        Two limits force chunking:
-        1) BiasAdd GPU kernels multiply N*H*W*C as int32 (overflow at ~43k
-           positions for emb=768, e.g. 32*20*100 → 64000).
-        2) Encoder activations (15 layers, 24-head smolgen) OOM well before that;
-           keep chunks near LC0's microbatch (512).
+        Chunking bounds:
+        1) BiasAdd GPU kernels multiply N*H*W*C as int32 (overflow at ~131k
+           positions for emb=256, ~43k for emb=768).
+        2) Encoder activation memory; 4096 is a safe tradeoff for 256x10.
         """
-        chunk_size = self.move_proj_chunk_size
-        d_type = moves_21.dtype
+        chunk_size = int(getattr(self, 'move_proj_chunk_size', 4096))
+        if chunk_size < 4096:
+            chunk_size = 4096
+            self.move_proj_chunk_size = chunk_size
+        project_chunk = self._get_project_chunk()
         num_positions_t = tf.shape(moves_21)[0]
         out_dim = self.lc0_embedding_dim
 
-        def _project_chunk(chunk_21):
-            n = tf.shape(chunk_21)[0]
-            padded = tf.concat([
-                chunk_21[:, :13],
-                tf.zeros((n, 91, 8, 8), dtype=d_type),
-                chunk_21[:, -8:],
-            ], axis=1)
-            # Inference-only on frozen LC0 body (no BN updates).
-            out = self.move_projection(padded, training=False)
-            out = tf.stop_gradient(out)
-            return tf.reshape(out, [-1, out_dim])
+        def _run_chunk(chunk):
+            n = tf.shape(chunk)[0]
+            # Pad to fixed chunk_size so the XLA binary stays monomorphic.
+            chunk = tf.pad(chunk, [[0, chunk_size - n], [0, 0], [0, 0], [0, 0]])
+            return project_chunk(chunk)[:n]
 
         def _empty():
             return tf.zeros((0, out_dim), dtype=tf.float32)
@@ -142,7 +196,7 @@ class GameAggregateViT(tf.keras.Model):
                 n = int(moves_21.shape[0]) if moves_21.shape[0] is not None else None
                 if n is not None:
                     chunks = [
-                        _project_chunk(moves_21[start:start + chunk_size])
+                        _run_chunk(moves_21[start:start + chunk_size])
                         for start in range(0, n, chunk_size)
                     ]
                     return tf.concat(chunks, axis=0) if len(chunks) > 1 else chunks[0]
@@ -150,7 +204,7 @@ class GameAggregateViT(tf.keras.Model):
             def _body(start, embeddings):
                 end = tf.minimum(start + chunk_size, num_positions_t)
                 embeddings = embeddings.write(
-                    start // chunk_size, _project_chunk(moves_21[start:end])
+                    start // chunk_size, _run_chunk(moves_21[start:end])
                 )
                 return end, embeddings
 

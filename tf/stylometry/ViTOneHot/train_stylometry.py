@@ -364,23 +364,58 @@ def create_seq_dataset(
   dataset = dataset.prefetch(10)
   return dataset
 
+DEFAULT_STEPS_PER_EPOCH = 5000
+DEFAULT_VAL_EPOCH_FRACTION = 0.01
+
 def get_shard_paths(data_dir: str, shard_type: str) -> List[str]:
   shard_dir = os.path.join(data_dir, shard_type)
   paths = sorted(glob.glob(os.path.join(shard_dir, "*.tfrecord")))
   print(f"Found {len(paths)} {shard_type} shards")
   return paths
 
-def split_shards(shard_paths: List[str], val_split: float) -> Tuple[List[str], List[str]]:
+def estimate_examples_per_shard(shard_paths: List[str]) -> int:
+  if not shard_paths:
+    return 0
+  path = shard_paths[0]
+  print(f"Counting examples in {os.path.basename(path)}...")
+  n = sum(1 for _ in tf.data.TFRecordDataset(path, compression_type='GZIP'))
+  print(f"Examples per shard (from first shard): {n}")
+  return max(1, n)
+
+def plan_train_val(
+  shard_paths: List[str],
+  target_val_examples: int,
+  examples_per_shard: int,
+) -> Tuple[List[str], List[str], float, float]:
+  """Hold out val shards and skip rates so expected val size ≈ target_val_examples.
+
+  Returns (train_shards, val_shards, train_skip_rate, val_skip_rate).
+  """
   num_shards = len(shard_paths)
   if num_shards == 0:
-    return [], []
+    return [], [], 0.0, 0.0
+
+  paths = list(shard_paths)
+  random.shuffle(paths)
+  target = max(1, int(target_val_examples))
+
   if num_shards == 1:
-    return shard_paths, shard_paths
-  val_count = max(1, int(num_shards * val_split))
-  random.shuffle(shard_paths)
-  val_shards = shard_paths[:val_count]
-  train_shards = shard_paths[val_count:]
-  return train_shards, val_shards
+    # Shared shard: val keeps a small hash slice; train keeps the complement.
+    val_keep = min(0.5, target / float(examples_per_shard))
+    return paths, paths, val_keep, 1.0 - val_keep
+
+  # Prefer one shard + subsample when a single shard covers the target.
+  if examples_per_shard >= target:
+    val_count = 1
+  else:
+    val_count = (target + examples_per_shard - 1) // examples_per_shard
+  val_count = min(max(1, val_count), num_shards - 1)
+
+  val_shards = paths[:val_count]
+  train_shards = paths[val_count:]
+  val_capacity = val_count * examples_per_shard
+  val_keep = min(1.0, target / float(val_capacity))
+  return train_shards, val_shards, 0.0, 1.0 - val_keep
 
 @tf.keras.utils.register_keras_serializable()
 class EloPredictor(tf.keras.Model):
@@ -792,7 +827,8 @@ def train_model(
   epochs: int,
   batch_size: int,
   learning_rate: float,
-  val_split: float,
+  val_epoch_fraction: float,
+  steps_per_epoch: int,
   num_layers: int,
   num_heads: int,
   mlp_dim: int,
@@ -810,13 +846,28 @@ def train_model(
   print(f"Loading data from {data_dir}...")
 
   seq_shard_paths = get_shard_paths(data_dir, "seq_shards")
+  examples_per_shard = estimate_examples_per_shard(seq_shard_paths)
+  epoch_examples = steps_per_epoch * batch_size
+  target_val_examples = max(1, int(round(epoch_examples * val_epoch_fraction)))
 
-  train_shards, val_shards = split_shards(seq_shard_paths, val_split)
-  print(f"Train shards: {len(train_shards)}, Val shards: {len(val_shards)}")
+  train_shards, val_shards, train_skip_rate, val_skip_rate = plan_train_val(
+    seq_shard_paths, target_val_examples, examples_per_shard
+  )
+  val_capacity = len(val_shards) * examples_per_shard
+  expected_val = int(round(val_capacity * (1.0 - val_skip_rate)))
+  expected_val_batches = max(1, (expected_val + batch_size - 1) // batch_size)
+  print(
+    f"Epoch size: {steps_per_epoch} steps × {batch_size} = {epoch_examples} examples"
+  )
+  print(
+    f"Val target ({val_epoch_fraction:.2%} of epoch): {target_val_examples} examples"
+  )
+  print(
+    f"Train shards: {len(train_shards)} (skip={train_skip_rate:.4f}), "
+    f"Val shards: {len(val_shards)} (skip={val_skip_rate:.4f}) "
+    f"→ ~{expected_val} examples (~{expected_val_batches} batches)"
+  )
 
-  train_skip_rate = 0.2 if len(seq_shard_paths) == 1 else 0.0
-  val_skip_rate = 0.99 if len(seq_shard_paths) == 1 else 0.99
-  
   train_dataset = create_seq_dataset(train_shards, batch_size, shuffle=True, repeat=True, skip_rate=train_skip_rate)
   val_dataset = create_seq_dataset(val_shards, batch_size, shuffle=False, repeat=False, skip_rate=val_skip_rate)
 
@@ -878,6 +929,12 @@ def train_model(
   vit = model.elo_predictor.vit
   if hasattr(vit, 'move_projection'):
     vit.move_projection.trainable = False
+  # bf16 + larger chunks + XLA on frozen LC0 (also upgrades older checkpoints).
+  if hasattr(vit, '_get_project_chunk'):
+    vit.move_proj_chunk_size = 4096
+    vit._project_chunk = None
+    vit._get_project_chunk()
+    print(f"LC0 fast path ready (chunk_size={vit.move_proj_chunk_size}, bf16+XLA)")
 
   if elo_task == 'classifier':
     model.compile(
@@ -998,7 +1055,7 @@ def train_model(
     train_dataset,
     validation_data=val_dataset,
     epochs=epochs,
-    steps_per_epoch=5000,
+    steps_per_epoch=steps_per_epoch,
     callbacks=callbacks,
     verbose=1  # type: ignore
   )
@@ -1094,7 +1151,18 @@ if __name__ == "__main__":
   parser.add_argument("--epochs", type=int, default=500)
   parser.add_argument("--batch-size", type=int, default=32)
   parser.add_argument("--learning-rate", type=float, default=1e-4)
-  parser.add_argument("--val-split", type=float, default=0.003)
+  parser.add_argument(
+    "--steps-per-epoch",
+    type=int,
+    default=DEFAULT_STEPS_PER_EPOCH,
+    help="Training steps that define one epoch.",
+  )
+  parser.add_argument(
+    "--val-epoch-fraction",
+    type=float,
+    default=DEFAULT_VAL_EPOCH_FRACTION,
+    help="Validation set size as a fraction of one epoch (steps_per_epoch × batch_size).",
+  )
   parser.add_argument(
     "--elo-task",
     choices=['regression', 'classifier', 'outcome'],
@@ -1133,7 +1201,8 @@ if __name__ == "__main__":
     epochs=args.epochs,
     batch_size=args.batch_size,
     learning_rate=args.learning_rate,
-    val_split=args.val_split,
+    val_epoch_fraction=args.val_epoch_fraction,
+    steps_per_epoch=args.steps_per_epoch,
     num_layers=args.num_layers,
     num_heads=args.num_heads,
     mlp_dim=args.mlp_dim,
