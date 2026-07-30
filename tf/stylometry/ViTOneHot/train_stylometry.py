@@ -925,6 +925,7 @@ def train_model(
     'mask0': (None, NUM_GAMES, MAX_MOVES),
     'mask1': (None, NUM_GAMES, MAX_MOVES),
   })
+  model.summary()
 
   print("Running pre-training validation...")
   for inputs, labels in val_dataset.take(1):
