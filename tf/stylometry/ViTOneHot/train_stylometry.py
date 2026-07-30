@@ -929,9 +929,9 @@ def train_model(
   vit = model.elo_predictor.vit
   if hasattr(vit, 'move_projection'):
     vit.move_projection.trainable = False
-  # bf16 + larger chunks + XLA on frozen LC0 (also upgrades older checkpoints).
+  # bf16 + chunked XLA on frozen LC0 (also upgrades older checkpoints).
   if hasattr(vit, '_get_project_chunk'):
-    vit.move_proj_chunk_size = 4096
+    vit.move_proj_chunk_size = 1024
     vit._project_chunk = None
     vit._get_project_chunk()
     print(f"LC0 fast path ready (chunk_size={vit.move_proj_chunk_size}, bf16+XLA)")

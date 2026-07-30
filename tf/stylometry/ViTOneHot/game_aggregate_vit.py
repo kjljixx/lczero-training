@@ -91,10 +91,10 @@ class GameAggregateViT(tf.keras.Model):
 
         # BiasAdd GPU kernels multiply N*H*W*C as int32. For emb=256 that
         # allows N < ~131k; for emb=768 the limit is ~43k. Encoder activation
-        # memory is the practical bound — 4096 is safe for 256x10 and cuts
-        # while_loop / launch overhead vs LC0's train microbatch of 512.
-        # Fixed size keeps XLA from retracing on every masked remainder length.
-        self.move_proj_chunk_size = 4096
+        # memory is the practical bound — 1024 stays near LC0's microbatch
+        # (512) while cutting while_loop / launch overhead. Fixed size keeps
+        # XLA from retracing on every masked remainder length.
+        self.move_proj_chunk_size = 1024
         self._project_chunk = None  # built below / lazily for checkpoint loads
         self._get_project_chunk()
 
@@ -142,11 +142,8 @@ class GameAggregateViT(tf.keras.Model):
     def _get_project_chunk(self):
         """XLA kernel for one fixed-size LC0 chunk; created once per instance."""
         if getattr(self, '_project_chunk', None) is None:
-            chunk_size = int(getattr(self, 'move_proj_chunk_size', 4096))
-            # Upgrade older checkpoints that still carry chunk_size=512.
-            if chunk_size < 4096:
-                chunk_size = 4096
-                self.move_proj_chunk_size = chunk_size
+            chunk_size = int(getattr(self, 'move_proj_chunk_size', 1024))
+            self.move_proj_chunk_size = chunk_size
             self._ensure_lc0_bf16_policy()
             self._project_chunk = self._make_project_chunk_fn(chunk_size)
         return self._project_chunk
@@ -184,13 +181,11 @@ class GameAggregateViT(tf.keras.Model):
         Chunking bounds:
         1) BiasAdd GPU kernels multiply N*H*W*C as int32 (overflow at ~131k
            positions for emb=256, ~43k for emb=768).
-        2) Encoder activation memory; 4096 is a safe tradeoff for 256x10.
+        2) Encoder activation memory; 1024 is a safe tradeoff for 256x10.
         """
-        chunk_size = int(getattr(self, 'move_proj_chunk_size', 4096))
-        if chunk_size < 4096:
-            chunk_size = 4096
-            self.move_proj_chunk_size = chunk_size
+        chunk_size = int(getattr(self, 'move_proj_chunk_size', 1024))
         project_chunk = self._get_project_chunk()
+        chunk_size = self.move_proj_chunk_size
         num_positions_t = tf.shape(moves_21)[0]
         out_dim = self.lc0_embedding_dim
 
