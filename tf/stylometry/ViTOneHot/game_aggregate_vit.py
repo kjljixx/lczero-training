@@ -119,11 +119,25 @@ class GameAggregateViT(tf.keras.Model):
         )
 
     def _ensure_lc0_bf16_policy(self):
-        """Force mixed_bfloat16 compute on the frozen LC0 body (weights stay fp32)."""
+        """Force mixed_bfloat16 compute on the frozen LC0 body (weights stay fp32).
+
+        Functional models expose a read-only dtype_policy, so only leaf layers
+        that accept assignment are updated.
+        """
         policy = tf.keras.mixed_precision.Policy('mixed_bfloat16')
-        self.move_projection.dtype_policy = policy
-        for layer in self.move_projection.layers:
-            layer.dtype_policy = policy
+
+        def _apply(layer):
+            sublayers = getattr(layer, 'layers', None)
+            if sublayers:
+                for sub in sublayers:
+                    _apply(sub)
+            try:
+                layer.dtype_policy = policy
+            except AttributeError:
+                # Functional / nested Model: read-only @property — children cover it.
+                pass
+
+        _apply(self.move_projection)
 
     def _get_project_chunk(self):
         """XLA kernel for one fixed-size LC0 chunk; created once per instance."""
